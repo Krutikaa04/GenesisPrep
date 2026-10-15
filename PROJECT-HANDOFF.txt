@@ -1,0 +1,408 @@
+================================================================================
+DEADBITS / PS 02 "SALVAGE"  -  PROJECT HANDOFF FOR 3 TEAM MEMBERS (CODEX AGENTS)
+================================================================================
+Read this whole file before touching code. It is written to be pasted/fed to an
+AI coding agent (Codex). Sections: 1 Goal  2 Contract  3 Current state
+4 Repo map  5 Workflow  6 Work split  7 Per-member task lists  8 Rules
+9 Definition of done  10 Ready-to-paste prompts  11 Open questions
+
+
+--------------------------------------------------------------------------------
+1. GOAL
+--------------------------------------------------------------------------------
+Build ./salvage <input_dir> <output_dir>: an OFFLINE command-line tool that
+identifies legacy binary files from their bytes, decodes what is provably
+intact, recovers as much as possible from damaged files, and reports honestly
+what was lost. For every input file it writes <output_dir>/<input name>.json
+(example: s01.dat.json) plus report.json. Always exit code 0. No network, no
+AI/LLM calls at runtime. Python 3 standard library only.
+
+Judging is on hidden files produced by the SAME generators as the 30 sample
+files in samples/official/. Records are matched on a key (id / sample / cell /
+name / ...) and graded on their fields, plus the file status and the damage
+"kind". Accuracy and honesty matter more than breadth. A guessed value that
+looks right but is unverified LOSES points; mark it verified:false instead.
+
+
+--------------------------------------------------------------------------------
+2. OUTPUT CONTRACT (authoritative: samples/official/OUTPUT-CONTRACT.md)
+--------------------------------------------------------------------------------
+Per-file JSON (exactly these top-level keys):
+  {"source_file": "s01.dat", "format": "LIBRA-98", "status": "ok",
+   "metadata": {}, "records": [], "damage": [
+      {"kind": "crc_mismatch", "offset": 123, "detail": "...", "lossy": true}]}
+
+status       ok | partial | unsupported | unrecognized | failed
+  ok = nothing lost; partial = some data lost OR unverified; unsupported =
+  recognised but cannot decode (e.g. encrypted); unrecognized = unknown format;
+  failed = recognised but unreadable.
+damage.kind  ONLY these: truncated, crc_mismatch, checksum_mismatch,
+  bad_length, unparsed_bytes, count_mismatch, invalid_value, oob_pointer,
+  index_missing, header_checksum, encrypted, unknown_record
+  (deadbits/model.py raises if you use anything else)
+format       LIBRA-98, LABLOG, VAULT, WKS, WPD, BRAVO, CVT, EBCDIC-DUMP, WAD,
+  PAK, UNKNOWN
+A recovered-but-unverified record carries "verified": false and/or
+"issues": [kinds].
+Input listing is NON-recursive; directories are skipped.
+report.json: {"tool_version", "files": [{"file","format","status","records":N,
+  "damage":N}], "totals": {status: count}}.
+Graded record fields per format (see OUTPUT-CONTRACT.md for the full table):
+  LIBRA-98: id,title,author,year,price_cents,copies,isbn,checked_out,deleted,
+            reference_only,due_date
+  LABLOG:   sample,time_ms,values[] ; metadata: instrument,sample_interval_ms,
+            channels[{index,unit}],start_time_utc,declared_block_count,events[]
+  VAULT:    id,name,type,size,sha256,compressed,text|width/height
+  WKS:      cell,row,col,type,value,alignment,number_format,iso_date,
+            cached_value,formula_raw_hex ; metadata: version_code,
+            declared_range,column_widths
+  WPD:      index,type(paragraph|page_break),text
+  BRAVO:    index,text   (metadata.format_runs is a bonus)
+  CVT:      slot,text ; metadata: name,structure,geos_type,modified,
+            class_name,author,description,declared_blocks
+  EBCDIC:   student_id,name,dob,gpa,credits,status,balance ; metadata: title,
+            run_date,trailer_count,trailer_credits_total
+  WAD/PAK:  name,offset,size,sha256
+
+
+--------------------------------------------------------------------------------
+3. CURRENT STATE (all of this already works and is tested)
+--------------------------------------------------------------------------------
+- All 10 formats are implemented and decode every file in samples/official.
+- 7/7 organizer reference outputs match (python tools/compare_expected.py).
+- 57 unit tests pass (python -m unittest discover -s tests -p "test_*.py"):
+  reference tests, a mutation suite (truncate at every offset, byte flips,
+  extreme values, zeroed blocks, junk), CLI contract tests, per-format tests.
+- Docker image builds offline and gives byte-identical output to a native run.
+- Adapters are AUTO-DISCOVERED: dropping a new module into deadbits/formats/
+  registers it. Nobody edits a shared registry.
+
+Status of the 30 sample files (what our tool outputs today):
+  s01-s03 LIBRA ok | s04 LIBRA partial (truncated, partial record id 1040)
+  s05,s06 LABLOG ok | s07 LABLOG partial (one block CRC mismatch, deliberate)
+  s08-s10 VAULT ok  | s11 WKS ok | s12 WKS partial (unknown opcode 0xFA)
+  s13 WKS partial (truncated) | s14 WPD ok | s15 WPD partial (truncated)
+  s16,s17 BRAVO ok  | s18,s19 CVT ok | s20,s21 EBCDIC ok | s22 EBCDIC partial
+  s23 WAD ok | s24 PAK ok | s25,s26,s27,s28,s30 unrecognized
+  s29 LIBRA failed (header truncated: "LB98" + 3 bytes)
+
+Layout knowledge per format (what is CONFIRMED vs ASSUMED) is in
+FORMAT-SPEC.md; what was tried, including failed hypotheses, is in
+FIELD-LOG.md. READ BOTH before editing a decoder.
+
+Key design rules already in the code:
+- detect(data)->0..1 needs structural proof (signature + coherent header or
+  checksum). decode(data, name)->Result never raises on bad input.
+- Records are decoded one at a time; a bad record is isolated and the scan
+  resynchronises. Never invent a value: omit it / null it and flag it.
+- Checksums: LIBRA record = sum8(flags..before chk), trailer = sum16 of all
+  bytes before "END!". LABLOG header+blocks = CRC-16/CCITT-FALSE. Others have
+  no checksums (stated limitation).
+- Damage offsets are clamped to the file size by Result.to_dict().
+- Output JSON is LF-only UTF-8, sorted by file name, deterministic.
+
+
+--------------------------------------------------------------------------------
+4. REPO MAP
+--------------------------------------------------------------------------------
+salvage, salvage.bat            launchers (work with relative paths)
+deadbits/cli.py                 CLI loop, report.json            [M3]
+deadbits/engine.py              adapter discovery + dispatch      [M3]
+deadbits/model.py               Result + contract vocabulary      [M3]
+deadbits/formats/libra98.py     LIBRA-98                          [M1]
+deadbits/formats/lablog.py      LABLOG                            [M1]
+deadbits/formats/ebcdic_dump.py EBCDIC-DUMP                       [M1]
+deadbits/formats/vault.py       VAULT                             [M2]
+deadbits/formats/wks.py         WKS                               [M2]
+deadbits/formats/cvt.py         CVT                               [M2]
+deadbits/formats/pak.py, wad.py PAK, WAD                          [M3]
+deadbits/formats/wpd.py         WPD                               [M3]
+deadbits/formats/bravo.py       BRAVO                             [M3]
+deadbits/formats/_template.py   skeleton for a new adapter (ignored by loader)
+deadbits/util/                  checksums, rle, xor, dosdate, petscii (shared;
+                                add functions, do not change behaviour)
+tests/test_fmt_<format>.py      per-format tests (owner edits own file only)
+tests/test_reference.py, test_mutation.py, test_cli.py, test_registry.py,
+tests/helpers.py                shared tests                      [M3]
+tools/compare_expected.py       organizer matching semantics
+tools/analyze.py                byte-analysis helper (diff/csum/rle/xor)
+samples/official/               organizer kit: samples/, expected_outputs/,
+                                HINTS.md, OUTPUT-CONTRACT.md (READ-ONLY)
+FORMAT-SPEC.md, FIELD-LOG.md    shared docs: edit ONLY your own format's
+                                section; append, never rewrite others
+
+
+--------------------------------------------------------------------------------
+5. GIT WORKFLOW (3 people, 3 branches, merge to master when finished)
+--------------------------------------------------------------------------------
+One-time (project lead, M3, runs this ONCE and pushes). The repository
+(github.com/Krutikaa04/GenesisPrep) already has a "master" branch with one
+initial commit; "master" is the integration branch. (If the team prefers
+"main", rename the branch on GitHub once and substitute it in these commands.)
+The initial commit does NOT yet contain the latest work (adapter
+auto-discovery, per-format tests, this handoff file), so first:
+  git checkout master
+  git add -A && git commit -m "Auto-discovered adapters, per-format tests, handoff"
+  git push origin master             # then M1 and M2 run: git pull origin master
+
+Branches (one long-lived branch per member, short sub-branches optional):
+  m1/gate-instruments   M1
+  m2/containers         M2
+  m3/archives-platform  M3
+
+Daily loop for every member:
+  git fetch origin && git rebase origin/master      # stay current, resolve early
+  ...work on YOUR files only...
+  python -m unittest discover -s tests -p "test_*.py"   # must be green
+  python tools/compare_expected.py                       # must be 7/7
+  git add -A && git commit -m "<area>: <what>"           # small commits
+  git push origin <your-branch>
+
+Merging to master (only when your task list item is DONE and green):
+  1. rebase on origin/master, re-run both commands above
+  2. open a pull request <your-branch> -> master; another member reviews
+  3. squash/merge; M3 re-runs the full suite + Docker check on master
+Never push directly to master. Never force-push master. If two members must edit
+the same file (model.py, engine.py, cli.py, tests/helpers.py), tell M3 and let
+M3 make the change.
+
+Conflict-prone shared docs: FORMAT-SPEC.md and FIELD-LOG.md. Each member only
+edits the section headed with their own format name, adding to it. If a merge
+conflict appears there, keep BOTH sides.
+
+
+--------------------------------------------------------------------------------
+6. WORK SPLIT
+--------------------------------------------------------------------------------
+M1  "Checksummed records"   LIBRA-98 (the gate), LABLOG, EBCDIC-DUMP
+M2  "Containers & sheets"   VAULT, WKS, CVT
+M3  "Archives, documents    PAK, WAD, WPD, BRAVO + platform (cli/engine/
+     & platform"            model), hardening, Docker, final docs, integration
+
+Why: M1 owns the highest-value format (LIBRA is the gate) and the two with real
+checksums; M2 owns the formats with the most structure to get exactly right;
+M3 owns the simpler formats plus everything cross-cutting and is the integrator.
+
+
+--------------------------------------------------------------------------------
+7. PER-MEMBER TASK LISTS (priority order; each item has an acceptance test)
+--------------------------------------------------------------------------------
+All members, every item: add or extend tests in YOUR tests/test_fmt_*.py using
+mutations of the kit samples (see how test_fmt_libra98.py mutates bytes), and
+append what you tried (including failures) to YOUR section of FIELD-LOG.md.
+
+=== M1: LIBRA-98, LABLOG, EBCDIC-DUMP ===
+Files: deadbits/formats/{libra98,lablog,ebcdic_dump}.py,
+       tests/test_fmt_{libra98,lablog,ebcdic_dump}.py
+
+M1-1  LIBRA-98 damage matrix (highest priority: this is the gate).
+      Cover, with one test each: wrong record length byte (recovered from
+      fields - already works), record checksum flip, trailer checksum flip,
+      header count too high/low (count_mismatch only when file is complete),
+      truncated inside header / inside extended header / inside a record /
+      before the trailer, data_offset out of bounds or < 16, garbage inserted
+      between records, zero block over a record, duplicate record ids,
+      bytes after END!. Fix any decoder behaviour that is wrong or noisy.
+      Rule: report the ROOT CAUSE once (a truncated file should say
+      truncated, not also count_mismatch).
+      Accept: every case yields a contract-valid file, no verified:true
+      record that is not byte-identical to the original.
+M1-2  LIBRA-98 semantics. Decide and document: deleted records stay in
+      output with deleted:true (current behaviour); partial (truncated)
+      record emits ONLY fully-read fields (currently just id); version != 2
+      or extended header handled via data_offset. Flag bits 1-2 meanings
+      (deleted / reference_only) are an ASSUMPTION - keep, but list in the
+      questions for the organizers (section 11).
+M1-3  LABLOG damage matrix: block CRC flip (samples kept verified:false),
+      length field corrupted (resync to next CRC-valid 0xB1 block),
+      unknown block type (unknown_record), truncated inside a block,
+      declared_block_count too high/low, missing channel table, two channel
+      tables, nchan = 0, header CRC flip (already marks records unverified).
+      Decide whether a truncated data block should yield its complete
+      samples as unverified (currently: dropped). Document the decision.
+M1-4  LABLOG facts to confirm from s05-s07 and document: start-time epoch
+      (1990-01-01 confirmed on s05 only), interval unit (x10 ms), event
+      time. Add s06/s07 golden assertions once organizers publish outputs.
+M1-5  EBCDIC-DUMP damage matrix: RDW length corrupted, BDW corrupted (VB),
+      trailer count / credits total mismatch (count_mismatch /
+      checksum_mismatch), truncated mid-record and before trailer, invalid
+      packed-decimal nibble, negative balance (sign D/B), unknown record
+      type, RECFM F (no RDW) detection if feasible.
+      Accept: same invariants as M1-1; s20/s21 stay ok, s22 stays partial.
+Done when: all three formats' damage matrices are tested, FORMAT-SPEC.md
+sections updated, compare_expected 7/7, mutation suite green.
+
+=== M2: VAULT, WKS, CVT ===
+Files: deadbits/formats/{vault,wks,cvt}.py,
+       tests/test_fmt_{vault,wks,cvt}.py, deadbits/util/{rle,xor,petscii}.py
+       (add helpers only)
+
+M2-1  VAULT damage matrix: index_off/names_off out of range, entry
+      block_off out of range, block id mismatch, stored_len/size corrupted
+      (payload decoded but length != size -> keep record unverified, report
+      bad_length), name_off outside names table, truncated file (index lost),
+      count too high/low. Decide the policy when the index is lost: only
+      salvage if it is RELIABLE (e.g. "BL"+id blocks whose XOR/RLE output is
+      clearly text); otherwise report index_missing and stop. Never emit a
+      record whose content you cannot back with evidence.
+M2-2  VAULT facts: header flags bits other than bit0 (s09 has 1), entry
+      type values other than 1/2/3, xor key 0, RLE escape edge cases (0x90 at
+      end, repeat count 0/1), bitmap hashing (sha256 over full decoded
+      payload including the two dimension bytes is an ASSUMPTION).
+M2-3  WKS: damage matrix (truncated mid-record, bad length for fixed-size
+      opcodes, label without NUL, col/row out of range, missing BOF, missing
+      EOF, bytes after EOF). Number formats: add a unit test per format
+      family (fixed, currency, percent, comma, date D1-D5). Date serials:
+      test iso_date including serial 60 (1900 leap bug) and serials > 2^15.
+      Keep the s11 behaviour (no number_format key on currency cells).
+M2-4  WKS metadata: RANGE (declared_range), COLW (column_widths), BOF
+      version_code; also decide how to treat cells outside the declared
+      range (keep, no damage).
+M2-5  CVT: damage matrix: declared_blocks too high/low, truncated inside
+      info block / data block, VLIR record index entries (0,0xFF) vs (0,0),
+      block counts beyond file, last-block byte count 0 or > 254. Verify
+      PETSCII conversion for digits, punctuation, CR, graphics (U+FFFD).
+      Note: structure VLIR has NO reference output (s19 only) - document
+      the assumptions explicitly.
+Done when: as M1, for VAULT/WKS/CVT.
+
+=== M3: PAK, WAD, WPD, BRAVO + PLATFORM + INTEGRATION ===
+Files: deadbits/formats/{pak,wad,wpd,bravo}.py, deadbits/{cli,engine,model}.py,
+       tests/test_{cli,mutation,reference,registry}.py, tests/helpers.py,
+       tests/test_fmt_{archives,wpd,bravo}.py, tools/, Dockerfile, README.md
+
+M3-0  FIRST (blocks others): commit the current working tree to master and push
+      (section 5), then create and push the m1/m2/m3 branches. Then enable the
+      protection rule "merge via PR only" on master if the host supports it.
+M3-1  PAK/WAD hardening: huge counts (4 billion entries) must not allocate or
+      loop for ever; duplicate names; overlapping entries (policy: keep,
+      note); entry data overlapping header/directory (oob_pointer, already);
+      zero-length entries; bad magic variants; directory ends before EOF with
+      trailing bytes (unparsed_bytes). Add a size guard for very large files.
+M3-2  WPD: more WordPerfect 5.x function codes (fixed 0xC0-0xEF done; verify
+      0xF0-0xFF variable-length handling), product/file type variants,
+      encrypted detection (key at 0x0C non-zero -> unsupported + encrypted;
+      test it - already unit-tested with a mutated sample), paragraph vs
+      page_break records, text of page 2+. Keep 0xAA soft-hyphen-dropped
+      assumption documented unless organizers say otherwise.
+M3-3  BRAVO: false-positive tests (plain text containing 0x1A, short files),
+      empty paragraphs, missing 0x1A, bytes >= 0x80. BONUS: decode the
+      formatting-runs trailer into metadata.format_runs only if you can
+      derive a layout consistent on BOTH s16 and s17 (trailers: s16 15 bytes,
+      s17 17 bytes); otherwise leave undecoded and say so in FORMAT-SPEC.md.
+M3-4  Platform: performance and safety (inputs of 100 MB+, huge declared
+      counts anywhere), unreadable files (permissions), symlinks, very long
+      names, non-UTF-8 names. report.json stays {tool_version,files,totals}.
+M3-5  Evaluation tool: tools/make_variants.py + tools/evaluate.py that apply
+      truncation at 10/50/90% and one byte short, single-byte corruption,
+      zeroed blocks to every kit sample and print, per format: recovery rate
+      of records, false (verified but wrong) records, crash count, coverage.
+      Only publish numbers that tool measured. Paste results into README.
+M3-6  Docker + release: tools/docker_check.sh (build, run with --network none,
+      diff against native run), README build command, FORMAT-SPEC.md and
+      FIELD-LOG.md consistency pass, a THIRD_PARTY.txt stating that no
+      third-party code is used.
+M3-7  INTEGRATION (continuous): review and merge M1/M2 pull requests; after
+      each merge run the full test suite, compare_expected and the Docker
+      check on master; keep master always green.
+Done when: baseline pushed, M3-1..M3-6 merged, master green, final docs ready.
+
+
+--------------------------------------------------------------------------------
+8. RULES (apply to every member and every agent)
+--------------------------------------------------------------------------------
+ 1. Python standard library only. No network access at runtime or in tests.
+ 2. Never edit samples/official/ (read-only fixtures).
+ 3. Never change the contract: key names, status words, damage kinds,
+    file naming. deadbits/model.py is the single source - M3 changes it.
+ 4. Never invent data. Unreadable value -> omit/null + verified:false +
+    issues. Wrong-but-plausible output is worse than missing output.
+ 5. A decoder must never raise on any bytes. Every length/offset/count read
+    from the file is hostile: bound-check before slicing, looping, allocating.
+ 6. Keep detect() strict: a signature alone is not proof (except where the
+    contract demands it, e.g. LIBRA header truncated -> failed).
+ 7. Change ONLY files you own (section 4). Cross-cutting need -> ask M3.
+ 8. Every behaviour change needs a test; every guess needs a line in
+    FORMAT-SPEC.md marked "assumption"; every dead end goes in FIELD-LOG.md.
+ 9. Do not weaken or delete existing tests to make them pass. If a test is
+    wrong, say why in the commit message.
+10. Output must stay deterministic and LF-only UTF-8.
+11. No unrelated refactors, no new dependencies, no GUI, no database.
+
+
+--------------------------------------------------------------------------------
+9. DEFINITION OF DONE (per item and for the project)
+--------------------------------------------------------------------------------
+Per item:   python -m unittest discover -s tests -p "test_*.py"   -> OK
+            python tools/compare_expected.py                      -> 7/7
+            git diff shows only files you own (+ your doc sections)
+Project:    master is green; Docker run with --network none is byte-identical
+            to native; README has the one-command build; FORMAT-SPEC.md and
+            FIELD-LOG.md are complete; evaluation numbers come from
+            tools/evaluate.py; no TODOs that change behaviour.
+
+Useful commands:
+  python -m deadbits.cli samples/official/samples out     run on the kit
+  python tools/compare_expected.py                        reference check
+  python tools/analyze.py diff a.bin b.bin                byte diff helper
+  python -m unittest tests.test_fmt_vault -v              one test module
+  docker build -t deadbits .                              image
+  docker run --rm --network none -v "$PWD/in:/in" -v "$PWD/out:/out" deadbits /in /out
+
+
+--------------------------------------------------------------------------------
+10. READY-TO-PASTE PROMPTS (one per member; paste after this file)
+--------------------------------------------------------------------------------
+--- M1 -------------------------------------------------------------------------
+You are working on the DeadBits / PS 02 Salvage repo on branch
+m1/gate-instruments. Read PROJECT-HANDOFF.txt, FORMAT-SPEC.md, FIELD-LOG.md and
+samples/official/OUTPUT-CONTRACT.md first. You own LIBRA-98, LABLOG and
+EBCDIC-DUMP: deadbits/formats/{libra98,lablog,ebcdic_dump}.py and
+tests/test_fmt_{libra98,lablog,ebcdic_dump}.py, plus your sections of
+FORMAT-SPEC.md/FIELD-LOG.md. Do tasks M1-1..M1-5 in order. After each task run
+the full test suite and tools/compare_expected.py (must stay 7/7). Do not edit
+files you do not own, do not change the output contract, never invent data,
+and keep decoders from ever raising. Commit small, push your branch, and
+report what changed and what assumptions you made.
+
+--- M2 -------------------------------------------------------------------------
+You are working on the DeadBits / PS 02 Salvage repo on branch m2/containers.
+Read PROJECT-HANDOFF.txt, FORMAT-SPEC.md, FIELD-LOG.md and
+samples/official/OUTPUT-CONTRACT.md first. You own VAULT, WKS and CVT:
+deadbits/formats/{vault,wks,cvt}.py, tests/test_fmt_{vault,wks,cvt}.py, and
+helper additions in deadbits/util/{rle,xor,petscii}.py, plus your sections of
+FORMAT-SPEC.md/FIELD-LOG.md. Do tasks M2-1..M2-5 in order. After each task run
+the full test suite and tools/compare_expected.py (must stay 7/7). Do not edit
+files you do not own, do not change the output contract, never invent data,
+and keep decoders from ever raising. VAULT index "size" is your integrity
+check - use it. Commit small, push your branch, report assumptions.
+
+--- M3 -------------------------------------------------------------------------
+You are the platform/integration owner of the DeadBits / PS 02 Salvage repo on
+branch m3/archives-platform. Read PROJECT-HANDOFF.txt, FORMAT-SPEC.md,
+FIELD-LOG.md and samples/official/OUTPUT-CONTRACT.md first. First do M3-0
+(commit current work to master, create branches), then M3-1..M3-6. You also own
+deadbits/{cli,engine,model}.py, tests/{helpers,test_cli,test_mutation,
+test_reference,test_registry}.py, tools/, Dockerfile, README.md and
+PAK/WAD/WPD/BRAVO. You are the only one who may change the output contract
+files. Review M1/M2 pull requests, keep master green (full tests, 7/7
+reference, Docker --network none diff). Never invent data; report assumptions.
+
+
+--------------------------------------------------------------------------------
+11. OPEN QUESTIONS (ask the organizers if any channel exists; otherwise keep the
+    documented assumption)
+--------------------------------------------------------------------------------
+ Q1  LIBRA flags: are bit1 = deleted and bit2 = reference_only?
+ Q2  Are extra keys allowed in per-file JSON records / report.json?
+ Q3  WPD: is byte 0xAA a soft hyphen (dropped) or a visible hyphen? 0xA0 as
+     space or U+00A0? Are page breaks separate page_break records?
+ Q4  BRAVO: are empty (CR CR) paragraphs expected as records with text ""?
+ Q5  A cell written twice in WKS: last value (current) or both records?
+ Q6  When a block/record fails its CRC but its structure is fine, do graders
+     expect the (unverified) record present or absent?
+ Q7  Expected status when only a lossless damage entry exists (e.g. unknown
+     WKS opcode skipped): ok or partial? (current: partial, lossy:false)
+================================================================================
+END OF FILE
+================================================================================
