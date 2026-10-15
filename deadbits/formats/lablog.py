@@ -15,6 +15,7 @@ verified 7/7 on s05 and the header CRC on all three:
 import datetime
 import math
 import struct
+from array import array
 
 from ..model import Result, unverified
 from ..util.checksums import crc16_ccitt_false
@@ -25,6 +26,69 @@ HEADER_LEN = 32
 SYNC = 0xB1
 EPOCH = datetime.datetime(1990, 1, 1)
 DROPOUT = -32768
+
+
+def _make_crc_tables():
+    byte_table = []
+    for byte in range(256):
+        value = byte << 8
+        for _ in range(8):
+            value = ((value << 1) ^ 0x1021) & 65535 if value & 32768 else (value << 1) & 65535
+        byte_table.append(value)
+    # Each pair applies the linear CRC transformation for 2**power zero
+    # bytes. Encoded blocks require at most 65538 bytes, hence 17 powers.
+    low = [((value << 8) & 65535) ^ byte_table[value >> 8] for value in range(256)]
+    high = [byte_table[value] for value in range(256)]
+    shifts = []
+    for _ in range(17):
+        shifts.append((tuple(low), tuple(high)))
+        low, high = ([low[value & 255] ^ high[value >> 8] for value in low],
+                     [low[value & 255] ^ high[value >> 8] for value in high])
+    return tuple(byte_table), tuple(shifts)
+
+
+_CRC_BYTES, _CRC_SHIFTS = _make_crc_tables()
+
+
+def _shift_crc(value, length):
+    power = 0
+    while length:
+        if length & 1:
+            low, high = _CRC_SHIFTS[power]
+            value = low[value & 255] ^ high[value >> 8]
+        length >>= 1
+        power += 1
+    return value
+
+
+class _CRCIndex:
+    """Exact interval CRCs after one lazy O(N) pass, using 2*(N+1) bytes.
+
+    A zero-initialized prefix and the CRC's linear shift transformation give
+    CRC(start:end, init) = prefix[end] ^ shift(prefix[start] ^ init, length).
+    This prevents overlapping candidate blocks from repeatedly hashing bytes.
+    """
+
+    def __init__(self, data):
+        self.data = data
+        self.prefix = None
+
+    @property
+    def active(self):
+        return self.prefix is not None
+
+    def _build(self):
+        prefix = array('H', [0])
+        value = 0
+        for byte in self.data:
+            value = ((value << 8) & 65535) ^ _CRC_BYTES[(value >> 8) ^ byte]
+            prefix.append(value)
+        self.prefix = prefix
+
+    def crc(self, start, end, init=65535):
+        if self.prefix is None:
+            self._build()
+        return self.prefix[end] ^ _shift_crc(self.prefix[start] ^ init, end - start)
 
 
 def detect(data: bytes) -> float:
@@ -41,15 +105,15 @@ def detect(data: bytes) -> float:
     scanner = _BlockScanner(data)
     p = scanner.next_valid(HEADER_LEN)
     while p is not None:
-        typ, payload, _, _ = _block_at(data, p)
+        typ, payload, end, _ = _block_at(data, p, scanner.crc_index)
         if ((typ == 3 and len(payload) > 0 and len(payload) % 12 == 0 and len(payload) <= 12 * 255) or
                 (typ == 2 and len(payload) >= 4 and len(payload) == 4 + payload[3])):
             return 0.8
-        p = scanner.next_valid(p + 1)
+        p = scanner.next_valid(end)
     return 0.0
 
 
-def _block_at(data: bytes, pos: int):
+def _block_at(data: bytes, pos: int, crc_index=None, materialize=True):
     """-> (type, payload, end, crc_ok) if a structurally complete block starts at pos, else None."""
     if pos + 4 > len(data) or data[pos] != SYNC:
         return None
@@ -57,8 +121,11 @@ def _block_at(data: bytes, pos: int):
     end = pos + 4 + ln + 2
     if end > len(data):
         return None
-    ok = crc16_ccitt_false(data[pos + 1:pos + 4 + ln]) == struct.unpack_from("<H", data, pos + 4 + ln)[0]
-    return data[pos + 1], data[pos + 4:pos + 4 + ln], end, ok
+    checksum = (crc_index.crc(pos + 1, pos + 4 + ln) if crc_index is not None else
+                crc16_ccitt_false(memoryview(data)[pos + 1:pos + 4 + ln]))
+    ok = checksum == struct.unpack_from("<H", data, pos + 4 + ln)[0]
+    payload = data[pos + 4:pos + 4 + ln] if materialize else memoryview(data)[pos + 4:pos + 4 + ln]
+    return data[pos + 1], payload, end, ok
 
 
 class _BlockScanner:
@@ -68,8 +135,9 @@ class _BlockScanner:
     that EOF was searched) prevents rescanning a suffix for every damaged block.
     """
 
-    def __init__(self, data):
+    def __init__(self, data, crc_index=None):
         self.data = data
+        self.crc_index = crc_index if crc_index is not None else _CRCIndex(data)
         self.cursor = HEADER_LEN
         self.candidate = None
         self.exhausted = False
@@ -82,7 +150,7 @@ class _BlockScanner:
         p = self.data.find(bytes([SYNC]), max(start, self.cursor))
         while p != -1:
             self.cursor = p + 1
-            blk = _block_at(self.data, p)
+            blk = _block_at(self.data, p, self.crc_index, materialize=False)
             if blk and blk[3]:
                 self.candidate = p
                 return p
@@ -92,7 +160,7 @@ class _BlockScanner:
         return None
 
 
-def _repair_length(data, pos, nchan, original):
+def _repair_length(data, pos, nchan, original, crc_index=None):
     """Repair only a length whose original stored CRC proves the reconstruction.
 
     The known type supplies one candidate length; no payload byte, type, count,
@@ -116,24 +184,25 @@ def _repair_length(data, pos, nchan, original):
     end = pos + 4 + length + 2
     if end > len(data):
         return None
-    payload = data[pos + 4:end - 2]
-    restored = bytes([typ]) + struct.pack("<H", length) + payload
-    if crc16_ccitt_false(restored) != struct.unpack_from("<H", data, end - 2)[0]:
+    index = crc_index if crc_index is not None else _CRCIndex(data)
+    restored_header = crc16_ccitt_false(bytes([typ]) + struct.pack("<H", length))
+    if index.crc(pos + 4, end - 2, restored_header) != struct.unpack_from("<H", data, end - 2)[0]:
         return None
+    payload = data[pos + 4:end - 2]
     return typ, payload, end, True
 
 
-def _inferred_channel_count(data):
+def _inferred_channel_count(data, crc_index=None):
     """A unique count independently supported by intact table and sample blocks.
 
     At most 255 possible counts are retained. Conflicting corroborated counts
     make the result ambiguous and are never resolved using the damaged header.
     """
     tables, samples = set(), set()
-    scanner = _BlockScanner(data)
+    scanner = _BlockScanner(data, crc_index)
     p = scanner.next_valid(HEADER_LEN)
     while p is not None:
-        typ, payload, end, _ = _block_at(data, p)
+        typ, payload, end, _ = _block_at(data, p, scanner.crc_index)
         if typ == 3 and len(payload) and len(payload) % 12 == 0:
             count = len(payload) // 12
             if count <= 255 and all(math.isfinite(v) for c in range(count)
@@ -171,9 +240,10 @@ def decode(data: bytes, name: str) -> Result:
     res.metadata = {"version": version, "instrument": instrument, "sample_interval_ms": interval,
                     "channels": [], "start_time_utc": start_iso, "declared_block_count": declared, "events": []}
     header_ok = crc16_ccitt_false(data[:30]) == struct.unpack_from("<H", data, 30)[0]
+    crc_index = _CRCIndex(data)
     if not header_ok:
         res.add_damage("header_checksum", 30, "header CRC-16 does not match; header fields unverified", False)
-        inferred = _inferred_channel_count(data)
+        inferred = _inferred_channel_count(data, crc_index)
         if inferred is not None and inferred != nchan:
             nchan = inferred
             res.damage[-1]["detail"] += "; channel count %d supported by CRC-valid table and samples" % inferred
@@ -193,10 +263,10 @@ def decode(data: bytes, name: str) -> Result:
     truncated = False
     framing_lost = False
     pos = HEADER_LEN
-    scanner = _BlockScanner(data)
+    scanner = _BlockScanner(data, crc_index)
     while pos < size:
-        blk = _block_at(data, pos)
-        repaired = _repair_length(data, pos, nchan, blk)
+        blk = _block_at(data, pos, crc_index if crc_index.active else None, materialize=False)
+        repaired = _repair_length(data, pos, nchan, blk, crc_index)
         if repaired is not None:
             blk = repaired
             res.add_damage("bad_length", pos + 2, "block length restored to %d bytes using its stored CRC"
@@ -239,6 +309,10 @@ def decode(data: bytes, name: str) -> Result:
                 continue
             res.add_damage("crc_mismatch", pos, "block type %d CRC mismatch; samples unverified" % typ, True)
             unverified_any = True
+        # A failed candidate may overlap the next selected block. Materialize
+        # only after choosing this block, so rejected overlapping payloads stay
+        # zero-copy as well as avoiding repeated CRC work.
+        payload = bytes(payload)
         blocks_seen += 1
         issues = [] if crc_ok else ["crc_mismatch"]
         if not header_ok:

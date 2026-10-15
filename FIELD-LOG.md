@@ -99,6 +99,17 @@ derived from `samples/official/`. Dates are the working-session dates.
   independent fixtures, engine-level negatives, repair rejection controls, and
   deterministic CRC-work and historical-invalidation operation guards.
 
+
+* Cross-review found that a forward marker cursor alone did not bound CRC work:
+  dense overlapping payload candidates still took almost six seconds at 13KB.
+  Added a lazy exact interval-CRC index, independently checked against bitwise
+  CRC for random/empty/max-length intervals and all 65,536 initial states.
+  Deterministic operation guards count prefix bytes, range-shift steps and
+  ordinary CRC bytes for dense markers and overlapping repair attempts.
+* Main probes could also copy overlapping invalid payloads before selection.
+  They now use memoryviews; instrumentation bounds selected payload copies by
+  input size. Pristine sequential logs do not allocate the interval index.
+
 ### VAULT (s08-s10)
 * H1 whole file XORed with a constant key. **Failed** (no key reveals text).
 * H2 logo.bin payload stored raw. **Confirmed**: its SHA-256 matches a 20-byte window of s08 at 205.

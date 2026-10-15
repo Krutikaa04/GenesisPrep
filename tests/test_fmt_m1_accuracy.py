@@ -235,7 +235,8 @@ def score(case, doc):
                 trust_violations=sum(key in actual and trusted(actual[key]) for key in case.uncertain),
                 format_correct=int(doc['format']==case.fmt),status_correct=int(doc['status']==case.status),
                 damage_correct=int({d['kind'] for d in doc['damage']}==set(case.damage)),
-                metadata_correct=int(all(doc['metadata'].get(k)==v for k,v in case.metadata.items())))
+                metadata_cases=int(bool(case.metadata)),
+                metadata_correct=int(bool(case.metadata) and all(doc['metadata'].get(k)==v for k,v in case.metadata.items())))
 
 
 def measure():
@@ -255,7 +256,7 @@ def measure():
     summaries={}
     metrics=('expected_records','recovered_records','correct_records','expected_fields','correct_fields',
              'missed_records','unexpected_records','duplicate_records','wrong_verified_records','trust_violations',
-             'format_correct','status_correct','damage_correct','metadata_correct','crashes')
+             'format_correct','status_correct','damage_correct','metadata_cases','metadata_correct','crashes')
     for fmt in sorted({row['format'] for row in rows}):
         subset=[r for r in rows if r['format']==fmt]
         summary={metric:sum(row.get(metric,0) for row in subset) for metric in metrics}
@@ -321,8 +322,9 @@ class IndependentM1Fixtures(unittest.TestCase):
                 doc = check_contract(self, res, len(case.data))
                 json.dumps(doc, allow_nan=False)
                 result = score(case, doc)
-                for metric in ('format_correct', 'status_correct', 'damage_correct', 'metadata_correct'):
+                for metric in ('format_correct', 'status_correct', 'damage_correct'):
                     self.assertEqual(result[metric], 1, (metric, doc))
+                self.assertEqual(result['metadata_correct'], result['metadata_cases'])
                 for metric in ('missed_records', 'unexpected_records', 'duplicate_records',
                                'wrong_verified_records', 'trust_violations'):
                     self.assertEqual(result[metric], 0, (metric, doc))

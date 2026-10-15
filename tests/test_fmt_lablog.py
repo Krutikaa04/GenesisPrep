@@ -24,6 +24,15 @@ def block(typ, payload):
     return b'\xb1' + body + struct.pack('<H', crc16_ccitt_false(body))
 
 
+def independent_crc(data, init=65535):
+    value = init
+    for byte in data:
+        value ^= byte << 8
+        for _ in range(8):
+            value = ((value << 1) ^ 0x1021) & 65535 if value & 32768 else (value << 1) & 65535
+    return value
+
+
 def known_log(blocks=None, nchan=2):
     """Independent fixture with directly specified calibrated values."""
     table = block(3, struct.pack('<4sff4sff', b'mV', .5, 1., b'ppm', 2., -3.))
@@ -279,6 +288,81 @@ class Lablog(unittest.TestCase):
             self.assertLess(len(checked), 3 * count + 10)
         self.assertLessEqual(costs[1][0], 2 * costs[0][0] + 2)
         self.assertLessEqual(costs[1][1], 2 * costs[0][1] + 30)
+
+    def test_interval_crc_matches_independent_oracle(self):
+        vector = b'123456789'
+        self.assertEqual(lablog._CRCIndex(vector).crc(0, len(vector)), 0x29b1)
+        rng = random.Random(260116)
+        data = bytes(rng.randrange(256) for _ in range(70000))
+        index = lablog._CRCIndex(data)
+        self.assertFalse(index.active)
+        for start, end in ((0, 0), (len(data), len(data)), (17, 17), (0, 65538),
+                           (len(data) - 65538, len(data))):
+            for init in (0, 1, 0x1234, 0xffff):
+                self.assertEqual(index.crc(start, end, init), independent_crc(data[start:end], init))
+        for _ in range(60):
+            start = rng.randrange(len(data) + 1)
+            end = rng.randrange(start, min(start + 65538, len(data)) + 1)
+            init = rng.randrange(65536)
+            self.assertEqual(index.crc(start, end, init), independent_crc(data[start:end], init))
+        short = lablog._CRCIndex(b'abc')
+        for init in range(65536):
+            self.assertEqual(short.crc(0, 3, init), independent_crc(b'abc', init))
+        self.assertEqual(index.prefix.itemsize, 2)
+        self.assertEqual(len(index.prefix), len(data) + 1)
+
+    def test_overlapping_candidates_have_bounded_crc_work(self):
+        for count in (100, 200, 400):
+            dense = (b'\xb1\xfa' + struct.pack('<H', 4 * count)) * count + bytes(4 * count + 6)
+            repairs = b'\xb1\x01\0\0\0\0' * count
+            for label, payload in (('dense markers', dense), ('overlapping repairs', repairs)):
+                data = known_log([])[:32] + payload
+                work = {'prefix_bytes': 0, 'shift_steps': 0, 'regular_bytes': 0, 'builds': 0}
+                original_build, original_shift = lablog._CRCIndex._build, lablog._shift_crc
+                def counted_build(index):
+                    work['builds'] += 1
+                    work['prefix_bytes'] += len(index.data)
+                    return original_build(index)
+                def counted_shift(value, length):
+                    work['shift_steps'] += length.bit_length()
+                    return original_shift(value, length)
+                def counted_crc(region):
+                    work['regular_bytes'] += len(region)
+                    return crc16_ccitt_false(region)
+                with self.subTest(count=count, kind=label), \
+                     mock.patch.object(lablog._CRCIndex, '_build', counted_build), \
+                     mock.patch.object(lablog, '_shift_crc', side_effect=counted_shift), \
+                     mock.patch.object(lablog, 'crc16_ccitt_false', side_effect=counted_crc):
+                    lablog.decode(data, 'overlap.bin')
+                self.assertEqual(work['builds'], 1)
+                self.assertEqual(work['prefix_bytes'], len(data))
+                self.assertLessEqual(work['shift_steps'], 17 * (4 * count + 10))
+                self.assertLessEqual(work['regular_bytes'], 2 * len(data) + 6 * count)
+
+    def test_rejected_main_candidates_do_not_copy_overlapping_payloads(self):
+        original_probe = lablog._block_at
+        for count in (64, 128):
+            # Each bad block spans many later blocks, but a nested empty block
+            # has an intact CRC and supplies the next boundary. Copying each
+            # rejected main payload would repeat 6*count bytes count times.
+            bad = b'\xb1\xfa' + struct.pack('<H', 6 * count)
+            payload = (bad + block(0xfb, b'')) * count + bytes(6 * count + 6)
+            data = known_log([])[:32] + payload
+            probes, copied = [], []
+            def measured_probe(data, pos, crc_index=None, materialize=True):
+                probes.append(materialize)
+                return original_probe(data, pos, crc_index, materialize)
+            def measured_bytes(value):
+                if isinstance(value, memoryview):
+                    copied.append(len(value))
+                return bytes(value)
+            with mock.patch.object(lablog, '_block_at', side_effect=measured_probe), \
+                 mock.patch.object(lablog, 'bytes', side_effect=measured_bytes, create=True):
+                lablog.decode(data, 'overlapping-main.bin')
+            self.assertGreater(len(probes), count)
+            self.assertFalse(any(probes))
+            self.assertGreaterEqual(len(copied), count)
+            self.assertLessEqual(sum(copied), len(data))
 
     def test_changed_units_mark_historical_samples_unverified(self):
         payload = bytearray(self.blocks[0][3])

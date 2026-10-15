@@ -152,6 +152,16 @@ unverified. s07 contains one deliberately corrupted block.
 * Truncated-row salvage remains outside this refinement: incomplete blocks are
   still dropped unless a complete payload and its original CRC prove a repair.
 
+
+* Dense-marker stress tests also exposed overlapping CRC payload work and
+  premature payload copies. A lazy, exact zero-initialized CRC prefix index
+  now supports every block interval in at most 17 constant lookup steps, shared
+  by lookahead, repairs and header-count inference. Logical prefix storage is
+  2*(input size+1) bytes on supported runtimes; pristine sequential logs avoid
+  allocating it. Candidate payloads remain memoryviews until block selection.
+  This adds bounded linear index memory while removing repeated overlapping
+  hashing and invalid-candidate payload copies. CRC semantics are unchanged.
+
 ## VAULT (s08-s10) — container of notes and scans
 | Field | Layout | Status |
 |---|---|---|
