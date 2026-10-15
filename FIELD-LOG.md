@@ -42,6 +42,21 @@ derived from `samples/official/`. Dates are the working-session dates.
   matched 7/7; header CRC over bytes 0..29 matched.
 * H6 only raw -32768 is a dropout. Confirmed by expected `-10091.5` (raw -20224 is a real value).
 
+
+* M1-3/4 (2026-10-16): added LABLOG block/header CRC, corrupt-length
+  resynchronisation, unknown-type, truncation, count, calibration replacement,
+  missing/zero-channel, malformed event/sample and non-finite float tests.
+* Failed policy: emitting raw values without calibration violates the meaning
+  of `values[]`; now unavailable calibrated values are null and unverified.
+  Failed replacement tables used to leave an older calibration trusted; now
+  cleared. Skipped framing also taints later calibration until a good table.
+* Truncated data blocks remain dropped: complete rows alone cannot establish
+  integrity when the block CRC is absent. This is an explicit conservative choice.
+* s06/s07 tests read header/event facts and confirm dropout / damaged-block
+  handling. They do not claim independent confirmation of the inferred epoch.
+  s06/s07 organizer goldens have not been published in the supplied kit.
+* Validation: 54 tests passed with Python 3.12.14; reference comparison 7/7.
+
 ### VAULT (s08-s10)
 * H1 whole file XORed with a constant key. **Failed** (no key reveals text).
 * H2 logo.bin payload stored raw. **Confirmed**: its SHA-256 matches a 20-byte window of s08 at 205.

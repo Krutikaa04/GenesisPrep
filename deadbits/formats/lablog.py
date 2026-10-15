@@ -13,6 +13,7 @@ verified 7/7 on s05 and the header CRC on all three:
     type 2 event        : sample u16 | severity u8 | msg_len u8 | message
 """
 import datetime
+import math
 import struct
 
 from ..model import Result, unverified
@@ -68,25 +69,34 @@ def decode(data: bytes, name: str) -> Result:
     if not header_ok:
         res.add_damage("header_checksum", 30, "header CRC-16 does not match; header fields unverified", False)
 
+    if nchan == 0:
+        res.add_damage("invalid_value", 5, "zero channels; sample layout cannot be decoded", True)
+        res.status = "failed"
+        return res
+
     scale = offset = units = None
-    cal_ok = True          # False once the channel table that calibrates the samples failed its CRC
+    calibration_issues = ["invalid_value"]
+    channel_tables = 0
     blocks_seen = 0
     unverified_any = not header_ok
     truncated = False
+    framing_lost = False
     pos = HEADER_LEN
     while pos < size:
         blk = _block_at(data, pos)
-        if blk is None or (blk and False):
+        if blk is None:
             # not at a block start (garbage) or block cut off by EOF
-            if data[pos] == SYNC and pos + 4 <= size and \
-                    pos + 4 + struct.unpack_from("<H", data, pos + 2)[0] + 2 > size:
+            framing_lost = True
+            calibration_issues = sorted(set(calibration_issues + ["bad_length"]))
+            if data[pos] == SYNC and (pos + 4 > size or
+                    pos + 4 + struct.unpack_from("<H", data, pos + 2)[0] + 2 > size):
                 # a plausible block header whose body runs past EOF -> truncated, unless a later valid block exists
                 later = _next_valid(data, pos + 1)
                 if later is None:
                     res.add_damage("truncated", pos, "file ends inside a block", True)
                     truncated = True
                     break
-                res.add_damage("unparsed_bytes", pos, "%d unparsed bytes before next valid block" % (later - pos), True)
+                res.add_damage("bad_length", pos + 2, "block length overruns later CRC-valid block at %d" % later, True)
                 pos = later
                 continue
             later = _next_valid(data, pos + 1)
@@ -99,9 +109,14 @@ def decode(data: bytes, name: str) -> Result:
         if not crc_ok:
             # resynchronise on a later block with a valid CRC, otherwise accept this block as unverified
             later = _next_valid(data, pos + 1)
-            if later is not None and later < end:
-                res.add_damage("crc_mismatch", pos, "block CRC mismatch and structure inconsistent; %d bytes skipped"
-                               % (later - pos), True)
+            shape_ok = ((typ == 3 and len(payload) == 12 * nchan) or
+                        (typ == 1 and len(payload) >= 3 and len(payload) == 3 + 2 * payload[2] * nchan) or
+                        (typ == 2 and len(payload) >= 4 and len(payload) == 4 + payload[3]))
+            if later is not None and (later < end or not shape_ok):
+                res.add_damage("bad_length", pos + 2, "damaged block framing; resynchronised at CRC-valid block %d"
+                               % later, True)
+                framing_lost = True
+                calibration_issues = sorted(set(calibration_issues + ["bad_length"]))
                 unverified_any = True
                 pos = later
                 continue
@@ -112,7 +127,13 @@ def decode(data: bytes, name: str) -> Result:
         if not header_ok:
             issues.append("header_checksum")   # time_ms derives from the (unverified) sample interval
         if typ == 3:
-            cal_ok = crc_ok
+            channel_tables += 1
+            if channel_tables > 1:
+                res.add_damage("invalid_value", pos, "repeated channel table; later samples use this table", False)
+            # A malformed replacement must not leave the previous calibration trusted.
+            scale = offset = units = None
+            res.metadata["channels"] = []
+            calibration_issues = [] if crc_ok else ["crc_mismatch"]
             if len(payload) == 12 * nchan:
                 units, scale, offset = [], [], []
                 for c in range(nchan):
@@ -121,7 +142,11 @@ def decode(data: bytes, name: str) -> Result:
                     scale.append(sc)
                     offset.append(of)
                 res.metadata["channels"] = [{"index": i, "unit": u} for i, u in enumerate(units)]
+                if not all(math.isfinite(v) for v in scale + offset):
+                    calibration_issues.append("invalid_value")
+                    res.add_damage("invalid_value", pos, "channel calibration contains non-finite values", True)
             else:
+                calibration_issues.append("bad_length")
                 res.add_damage("bad_length", pos, "channel table is %d bytes, expected %d" % (len(payload), 12 * nchan), True)
                 unverified_any = True
         elif typ == 1:
@@ -138,30 +163,35 @@ def decode(data: bytes, name: str) -> Result:
                 for i in range(n):
                     row = raws[i * nchan:(i + 1) * nchan]
                     if scale is None:
-                        vals = list(row)
-                        rec_issues = issues + ["invalid_value"]
+                        vals = [None] * nchan
+                        rec_issues = issues + calibration_issues
                     else:
-                        vals = [None if r == DROPOUT else round(r * scale[c] + offset[c], 6) for c, r in enumerate(row)]
-                        rec_issues = issues if cal_ok else issues + ["crc_mismatch"]
+                        vals = [None if r == DROPOUT or not (math.isfinite(scale[c]) and math.isfinite(offset[c]))
+                                else round(r * scale[c] + offset[c], 6) for c, r in enumerate(row)]
+                        rec_issues = issues + calibration_issues
                     rec = {"sample": first + i, "time_ms": (first + i) * interval, "values": vals}
                     if rec_issues:
                         unverified(rec, *rec_issues)
                     res.records.append(rec)
                 if scale is None:
-                    res.add_damage("invalid_value", pos, "no channel calibration block before samples; raw values", False)
+                    res.add_damage("invalid_value", pos, "no usable channel calibration before samples; calibrated values unavailable", True)
         elif typ == 2:
             if len(payload) >= 4 and len(payload) == 4 + payload[3]:
                 sample, sev = struct.unpack_from("<HB", payload, 0)
-                res.metadata["events"].append({"sample": sample, "severity": sev,
-                                               "message": payload[4:].decode("latin-1")})
+                event = {"sample": sample, "severity": sev, "message": payload[4:].decode("latin-1")}
+                if issues:
+                    unverified(event, *issues)
+                res.metadata["events"].append(event)
             else:
                 res.add_damage("bad_length", pos, "event block malformed", True)
                 unverified_any = True
         else:
+            if not crc_ok:
+                calibration_issues = sorted(set(calibration_issues + ["crc_mismatch"]))
             res.add_damage("unknown_record", pos, "unknown block type %d (%d bytes skipped)" % (typ, len(payload)), False)
         pos = end
 
-    if not truncated and declared != blocks_seen:
+    if not truncated and not framing_lost and declared != blocks_seen:
         res.add_damage("count_mismatch", 28, "header declares %d blocks, %d found" % (declared, blocks_seen),
                        blocks_seen < declared)
     res.records.sort(key=lambda r: r["sample"])

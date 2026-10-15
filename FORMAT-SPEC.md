@@ -70,6 +70,35 @@ A CRC-failed block still yields its samples as `verified:false` + `crc_mismatch`
 consistent; samples calibrated by a CRC-failed channel table, or timed from a CRC-failed header, are also
 unverified. s07 contains one deliberately corrupted block.
 
+
+### M1 hardening decisions (2026-10-16)
+* A length-corrupted block resynchronises at a later complete CRC-valid block.
+  Lost framing suppresses secondary count errors; later calibrated samples are
+  unverified until a new intact channel table establishes calibration again.
+* A CRC-failed but structurally coherent sample block is retained unverified.
+  Failed header/table CRCs propagate to dependent records; events with a failed
+  block/header CRC are explicitly unverified in metadata too.
+* Truncated sample blocks are dropped in their entirety, including complete rows
+  before the cut (**conservative recovery policy**): without the trailing CRC,
+  genuine truncation cannot be distinguished from a corrupted block length.
+  A partial block header is also `truncated`, without `count_mismatch`.
+* Missing/malformed calibration emits `null` calibrated values and unverified
+  records; raw ADC readings are never passed off as calibrated values. A
+  malformed replacement clears the previous table. Non-finite calibration
+  coefficients yield `null` for affected channels and `invalid_value`.
+* Repeated channel tables report lossless `invalid_value`; the latest table
+  applies to following samples (**assumption**, not organizer-confirmed).
+  No-channel headers fail with `invalid_value` rather than creating empty rows.
+* Timing evidence: interval is multiplied by 10 (s05 reference proves the unit).
+  All samples use `time_ms = sample * sample_interval_ms`; events carry sample
+  indices, so their relative time uses the same multiplication. No new event
+  time key is added. Using the s05-derived 1990 epoch gives s06
+  `1993-09-01T20:06:50Z` (1000 ms interval) and s07
+  `1994-04-02T21:02:06Z` (250 ms interval). These are **assumptions beyond s05**,
+  checked against header bytes, not independent organizer goldens. No s06/s07
+  reference output exists in this checkout; new golden assertions remain
+  conditional on the organizers publishing those outputs.
+
 ## VAULT (s08-s10) — container of notes and scans
 | Field | Layout | Status |
 |---|---|---|
