@@ -58,7 +58,7 @@ derived from `samples/official/`. Dates are the working-session dates.
   integrity when the block CRC is absent. This is an explicit conservative choice.
 * s06/s07 tests read header/event facts and confirm dropout / damaged-block
   handling. They do not claim independent confirmation of the inferred epoch.
-  s06/s07 organizer goldens have not been published in the supplied kit.
+  s06/s07 organizer goldens are not present in the supplied kit.
 * Final review: a new table with changed units makes historical samples
   ambiguous under the contract's one channel list; those samples are now
   unverified. Added the regression plus 384 seeded compound-damage cases.
