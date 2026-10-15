@@ -127,6 +127,37 @@ char[20], dob packed(5) = 0YYYYMMDD+F, gpa packed(3)/100, credits u16 BE, status
 packed(4)/100 (sign nibble D/B = negative), 2 filler; `T` count packed(4), credits total packed(5).
 Confirmed on s20 expected; trailer totals reconcile on s20/s21 (402, 546).
 
+
+### M1 hardening decisions (2026-10-16)
+* RDWs and BDWs are bounded by the file and enclosing block. Invalid RDW
+  lengths/reserved bytes seek a later complete, schema-consistent known record;
+  a corrupted block descriptor seeks the next credible BDW and marks records
+  recovered under the damaged descriptor unverified. Known header/data/trailer
+  payload sizes are 29/44/10 bytes, excluding the four-byte RDW.
+* A next block's first RDW may itself be damaged: its known payload schema can
+  still establish that BDW boundary. A record never consumes bytes across an
+  established block boundary. This recovery policy is an **assumption** based on
+  the sample generator's fixed schemas, not a general-purpose mainframe parser.
+* Framing loss/truncation suppresses derivative trailer count/credits errors.
+  Missing trailers report truncation; incomplete records are dropped rather than
+  inventing partial student fields. Outer-block and inner-record truncation from
+  the same EOF cut produce one root damage report.
+* Empty/invalid packed fields return unavailable values; invalid dates, digit or
+  sign nibbles flag records. Packed signs B/D are negative, A/C/E/F positive.
+  Invalid trailer totals are `invalid_value`, not usable reconciliation evidence.
+* A credits-total disagreement cannot identify whether a record or trailer is
+  wrong: keep every recovered record but mark them unverified with
+  `checksum_mismatch`. This total is not a checksum over the other record fields.
+* Detection needs a credible cp037 header/date, or a sufficiently long printable
+  prefix of a truncated known-length header. A lone `H` byte after zeros is
+  insufficient. Descriptor corruption alone need not erase header recognition.
+* RECFM F support was assessed and is intentionally not inferred: no F sample,
+  reference, LRECL, or padding convention is supplied. Removing RDWs creates
+  variable-sized H/D/T payloads, which is not evidence of a fixed-length format.
+  Such files remain unrecognized; no speculative adapter path is added.
+* There is no per-record integrity checksum. Plausible changes to names, IDs,
+  dates, GPA, status or balance can pass structural validation undetected.
+
 ## PAK (s24) and WAD (s23) — game archives
 PAK: `PACK`, dir_off u32, dir_len u32; 64-byte entries name[56] + offset u32 + size u32.
 WAD: `IWAD`/`PWAD`, numlumps u32, dir_off u32; 16-byte entries offset u32, size u32, name[8]

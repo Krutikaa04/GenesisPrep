@@ -81,6 +81,26 @@ derived from `samples/official/`. Dates are the working-session dates.
 * H3 dob = packed `YYYYMMDD`. **Corrected**: 5 bytes = `0YYYYMMDD` + sign nibble F.
 * Trailer credits total equals sum of credits (402 on s20, 546 on s21) - used for `checksum_mismatch`.
 
+
+* M1-5 (2026-10-16): added RDW/BDW length and reserved-byte corruption,
+  trailer count/credits mismatch, inner/outer truncation, malformed short
+  trailer, invalid packed fields/date, B/D negative balances, unknown types,
+  strict detection and direct decoder safety tests.
+* Found and fixed: empty packed-decimal input raised IndexError; trailer code
+  parsed slices before checking length. Record lengths are now checked first,
+  and packed parsing returns None on empty input.
+* Failed boundary hypothesis: recognizing the next BDW required its first RDW
+  to be intact. A damaged first RDW made the previous block swallow that whole
+  block. Known payload sizes/content now independently establish the boundary.
+* Descriptor damage resynchronises instead of abandoning all subsequent records;
+  recovered records under a damaged BDW are unverified. Credits disagreement
+  marks every candidate record unverified because the culprit is unknown.
+* RECFM F feasibility review: no supplied fixture establishes LRECL/padding, so
+  guessing fixed boundaries would invent evidence. Both unframed mixed-length
+  and synthetic padded payloads are explicitly rejected by detection tests.
+* Validation: 75 tests passed with Python 3.12.14; reference comparison 7/7;
+  s20/s21 remain ok and s22 remains partial with one truncation root cause.
+
 ### CVT (s18-s19)
 * H1 signature at 0x21. **Failed** (detection missed every file); it starts at 0x1E (`PRG formatted ...`).
 * H2 ASCII-style letter case. **Failed**: 0x41-0x5A are lower case and 0xC1-0xDA upper case in PETSCII.
