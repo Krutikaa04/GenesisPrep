@@ -51,6 +51,11 @@ resync on the next valid record; truncation inside a record keeps only fully rea
   data offset is ambiguous (pointer corruption or an extended header cut short):
   report `oob_pointer`, recover from offset 16 if possible, and report a missing
   trailer as `truncated` rather than claiming a complete file.
+* Resynchronisation also considers field-delimited checksum-valid records with
+  a damaged length. A stray `END!` in garbage is skipped when a later validated
+  record exists, while a checksum-valid real trailer still ends the record scan.
+  Length recovery rejects undefined text bytes and impossible bodies above 255
+  bytes instead of silently emitting replacement characters as verified text.
 * A damaged file checksum does not invalidate independently checksummed records.
   Additive checksums are not collision-resistant; compensating byte changes,
   and the header's unprotected encoding flag, cannot prove original text identity.
@@ -88,6 +93,8 @@ unverified. s07 contains one deliberately corrupted block.
   coefficients yield `null` for affected channels and `invalid_value`.
 * Repeated channel tables report lossless `invalid_value`; the latest table
   applies to following samples (**assumption**, not organizer-confirmed).
+  If units change, historical samples are unverified because the contract can
+  expose only one channel-unit list for the file.
   No-channel headers fail with `invalid_value` rather than creating empty rows.
 * Timing evidence: interval is multiplied by 10 (s05 reference proves the unit).
   All samples use `time_ms = sample * sample_interval_ms`; events carry sample

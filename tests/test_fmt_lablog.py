@@ -129,6 +129,16 @@ class Lablog(unittest.TestCase):
         self.assertEqual(doc['records'][:4], self.original[:4])
         self.assertTrue(all(not r['verified'] and 'bad_length' in r['issues'] for r in doc['records'][4:]))
 
+    def test_changed_units_mark_historical_samples_unverified(self):
+        payload = bytearray(self.blocks[0][3])
+        payload[:4] = b'degC'
+        data = bytearray(self.data[:87] + block(3, payload) + self.data[87:])
+        struct.pack_into('<H', data, 28, 8)
+        doc = self.decode(header_crc(data))
+        self.assertEqual(doc['metadata']['channels'][0]['unit'], 'degC')
+        self.assertTrue(all(not r['verified'] and 'invalid_value' in r['issues'] for r in doc['records'][:4]))
+        self.assertEqual(doc['records'][4:], self.original[4:])
+
     def test_zero_channels_rejected(self):
         data=bytearray(self.data);data[5]=0
         doc=self.decode(header_crc(data))
@@ -181,6 +191,31 @@ class Lablog(unittest.TestCase):
             else:
                 self.assertEqual(doc['status'],'partial')
                 self.assertEqual([r['sample'] for r in doc['records'] if not r.get('verified',True)],list(range(9,15)))
+
+    def test_seeded_compound_damage_directly(self):
+        rng = random.Random(107105)
+        for name in ('s05.dat', 's06.dat', 's07.dat'):
+            original = (SAMPLES / name).read_bytes()
+            for case in range(128):
+                data = bytearray(original)
+                for _ in range(rng.randint(1, 4)):
+                    pos = rng.randrange(len(data) + 1)
+                    operation = rng.randrange(4)
+                    if operation == 0:
+                        del data[pos:pos + rng.randint(1, 16)]
+                    elif operation == 1:
+                        data[pos:pos] = bytes(rng.randrange(256) for _ in range(rng.randint(1, 16)))
+                    elif operation == 2:
+                        stop = min(pos + rng.randint(1, 16), len(data))
+                        data[pos:stop] = bytes([rng.randrange(256)]) * (stop - pos)
+                    else:
+                        del data[pos:]
+                with self.subTest(name=name, case=case):
+                    res = lablog.decode(bytes(data), name)
+                    res.size = len(data)
+                    doc = check_contract(self, res, len(data))
+                    self.assertEqual(set(doc), {'source_file', 'format', 'status', 'metadata', 'records', 'damage'})
+                    json.dumps(doc, allow_nan=False)
 
     def test_direct_decoder_never_raises(self):
         rng=random.Random(7103)

@@ -28,6 +28,10 @@ derived from `samples/official/`. Dates are the working-session dates.
 * Invalid ISBN bytes and undefined text bytes now produce `invalid_value`.
   Failed test hypothesis: a low DOS-date byte of `0xFF` is always invalid; it
   actually encodes July 31. The invalid-date mutation uses day zero instead.
+* Final review: a stray `END!` inside inserted garbage could stop recovery before
+  later good records; resynchronisation now distinguishes this from a real
+  checksum-valid trailer. Added bad-length resynchronisation and undefined-text
+  recovery tests, plus 640 seeded compound-damage direct decoder cases.
 * Validation: 36 tests passed with Python 3.12.14; reference comparison 7/7.
   System Python 3.9 cannot run the existing CLI fixture's
   `TemporaryDirectory(ignore_cleanup_errors=True)`; no M3 file was changed.
@@ -55,6 +59,9 @@ derived from `samples/official/`. Dates are the working-session dates.
 * s06/s07 tests read header/event facts and confirm dropout / damaged-block
   handling. They do not claim independent confirmation of the inferred epoch.
   s06/s07 organizer goldens have not been published in the supplied kit.
+* Final review: a new table with changed units makes historical samples
+  ambiguous under the contract's one channel list; those samples are now
+  unverified. Added the regression plus 384 seeded compound-damage cases.
 * Validation: 54 tests passed with Python 3.12.14; reference comparison 7/7.
 
 ### VAULT (s08-s10)
@@ -98,6 +105,8 @@ derived from `samples/official/`. Dates are the working-session dates.
 * RECFM F feasibility review: no supplied fixture establishes LRECL/padding, so
   guessing fixed boundaries would invent evidence. Both unframed mixed-length
   and synthetic padded payloads are explicitly rejected by detection tests.
+* Final review added 384 seeded compound-damage cases. Across M1, the final
+  suite has 82 passing tests and reference comparison remains 7/7.
 * Validation: 75 tests passed with Python 3.12.14; reference comparison 7/7;
   s20/s21 remain ok and s22 remains partial with one truncation root cause.
 

@@ -1,4 +1,5 @@
 """M1 EBCDIC descriptor, packed-decimal, and trailer damage matrix."""
+import json
 import random
 import struct
 import unittest
@@ -196,6 +197,31 @@ class Ebcdic(unittest.TestCase):
                 self.assertEqual(doc['metadata']['trailer_credits_total'],total)
             else:
                 self.assertEqual(self.kinds(doc),['truncated'])
+
+    def test_seeded_compound_damage_directly(self):
+        rng = random.Random(107105)
+        for name in ('s20.000', 's21.000', 's22.000'):
+            original = (SAMPLES / name).read_bytes()
+            for case in range(128):
+                data = bytearray(original)
+                for _ in range(rng.randint(1, 4)):
+                    pos = rng.randrange(len(data) + 1)
+                    operation = rng.randrange(4)
+                    if operation == 0:
+                        del data[pos:pos + rng.randint(1, 16)]
+                    elif operation == 1:
+                        data[pos:pos] = bytes(rng.randrange(256) for _ in range(rng.randint(1, 16)))
+                    elif operation == 2:
+                        stop = min(pos + rng.randint(1, 16), len(data))
+                        data[pos:stop] = bytes([rng.randrange(256)]) * (stop - pos)
+                    else:
+                        del data[pos:]
+                with self.subTest(name=name, case=case):
+                    res = ebcdic.decode(bytes(data), name)
+                    res.size = len(data)
+                    doc = check_contract(self, res, len(data))
+                    self.assertEqual(set(doc), {'source_file', 'format', 'status', 'metadata', 'records', 'damage'})
+                    json.dumps(doc, allow_nan=False)
 
     def test_direct_decoder_and_packed_never_raise(self):
         self.assertIsNone(ebcdic._packed(b''))

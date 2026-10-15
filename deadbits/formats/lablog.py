@@ -132,6 +132,7 @@ def decode(data: bytes, name: str) -> Result:
                 res.add_damage("invalid_value", pos, "repeated channel table; later samples use this table", False)
             # A malformed replacement must not leave the previous calibration trusted.
             scale = offset = units = None
+            previous_channels = res.metadata["channels"]
             res.metadata["channels"] = []
             calibration_issues = [] if crc_ok else ["crc_mismatch"]
             if len(payload) == 12 * nchan:
@@ -141,7 +142,13 @@ def decode(data: bytes, name: str) -> Result:
                     units.append(u.split(b"\0")[0].decode("latin-1"))
                     scale.append(sc)
                     offset.append(of)
-                res.metadata["channels"] = [{"index": i, "unit": u} for i, u in enumerate(units)]
+                channels = [{"index": i, "unit": u} for i, u in enumerate(units)]
+                if previous_channels and previous_channels != channels:
+                    # The contract has one channel list, so historical units are
+                    # ambiguous when a later table changes them.
+                    for record in res.records:
+                        unverified(record, "invalid_value")
+                res.metadata["channels"] = channels
                 if not all(math.isfinite(v) for v in scale + offset):
                     calibration_issues.append("invalid_value")
                     res.add_damage("invalid_value", pos, "channel calibration contains non-finite values", True)

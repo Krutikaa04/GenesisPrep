@@ -1,4 +1,5 @@
 """M1 LIBRA damage matrix, semantics, and direct decoder safety."""
+import json
 import random
 import struct
 import unittest
@@ -118,6 +119,35 @@ class Libra(unittest.TestCase):
         self.assertEqual(doc['records'], self.original)
         self.assertEqual(self.kinds(doc), ['unparsed_bytes'])
 
+    def test_stray_trailer_in_garbage_does_not_hide_records(self):
+        pos = self.spans[1][0]
+        for garbage in (b'END!xx', b'junkEND!xxjunk'):
+            data = self.data[:pos] + garbage + self.data[pos:]
+            doc = self.decode(file_checksum(data))
+            self.assertEqual(doc['records'], self.original)
+            self.assertEqual(self.kinds(doc), ['unparsed_bytes'])
+
+    def test_resynchronisation_also_recovers_a_bad_length(self):
+        pos = self.spans[1][0]
+        data = bytearray(self.data)
+        data[pos + 1] = 255
+        data = data[:pos] + b'junk' + data[pos:]
+        doc = self.decode(file_checksum(data))
+        self.assertEqual(doc['records'], self.original)
+        self.assertEqual(self.kinds(doc), ['unparsed_bytes', 'bad_length'])
+
+    def test_recovery_never_silently_replaces_undefined_text(self):
+        data = bytearray(self.data)
+        data[5] = 1  # cp1252 has undefined byte 0x81.
+        data[24] = 0x81
+        start, end = self.spans[0]
+        data[end-1] = sum(data[start+2:end-1]) & 255
+        data[17] = 0
+        doc = self.decode(file_checksum(data))
+        self.assertTrue(all('\ufffd' not in r.get('title', '') or not r.get('verified', True)
+                            for r in doc['records']))
+        self.assertEqual(doc['records'], self.original[1:])
+
     def test_zeroed_record_resynchronises(self):
         start, end = self.spans[1]
         doc = self.decode(file_checksum(self.data[:start] + bytes(end-start) + self.data[end:]))
@@ -170,6 +200,31 @@ class Libra(unittest.TestCase):
             doc = self.decode(file_checksum(data))
             self.assertIn('invalid_value', self.kinds(doc))
             self.assertFalse(doc['records'][0]['verified'])
+
+    def test_seeded_compound_damage_directly(self):
+        rng = random.Random(107105)
+        for name in ('s01.dat', 's02.dat', 's03.dat', 's04.dat', 's29_almost_libra.dat'):
+            original = (SAMPLES / name).read_bytes()
+            for case in range(128):
+                data = bytearray(original)
+                for _ in range(rng.randint(1, 4)):
+                    pos = rng.randrange(len(data) + 1)
+                    operation = rng.randrange(4)
+                    if operation == 0:
+                        del data[pos:pos + rng.randint(1, 16)]
+                    elif operation == 1:
+                        data[pos:pos] = bytes(rng.randrange(256) for _ in range(rng.randint(1, 16)))
+                    elif operation == 2:
+                        stop = min(pos + rng.randint(1, 16), len(data))
+                        data[pos:stop] = bytes([rng.randrange(256)]) * (stop - pos)
+                    else:
+                        del data[pos:]
+                with self.subTest(name=name, case=case):
+                    res = libra98.decode(bytes(data), name)
+                    res.size = len(data)
+                    doc = check_contract(self, res, len(data))
+                    self.assertEqual(set(doc), {'source_file', 'format', 'status', 'metadata', 'records', 'damage'})
+                    json.dumps(doc, allow_nan=False)
 
     def test_direct_decoder_never_raises(self):
         rng = random.Random(7101)

@@ -107,34 +107,44 @@ def _parse_by_fields(data: bytes, pos: int, enc: str):
         isbn = data[p:p + 10]; p += 10
         due = struct.unpack_from("<H", data, p)[0]; p += 2
         chk = data[p]; p += 1
-    except (IndexError, struct.error):
+        title_text, author_text = title.decode(enc), author.decode(enc)
+    except (IndexError, struct.error, UnicodeDecodeError):
         return None
-    if p > size or sum(data[pos + 2:p - 1]) & 0xFF != chk or len(isbn) != 10:
+    if p - pos - 2 > 255 or p > size or sum(data[pos + 2:p - 1]) & 0xFF != chk or len(isbn) != 10:
         return None
     if not all(c in b"0123456789X" for c in isbn):
         return None
     due_iso = dosdate.iso_date(due) if due else None
     if due and due_iso is None:
         return None
-    return ({"id": rid, "title": title.decode(enc, "replace"), "author": author.decode(enc, "replace"),
+    return ({"id": rid, "title": title_text, "author": author_text,
              "year": year + 1500, "price_cents": price, "copies": copies,
              "isbn": isbn.decode("ascii"), "checked_out": bool(flags & 1), "deleted": bool(flags & 2),
              "reference_only": bool(flags & 4), "due_date": due_iso}, p)
 
 
 def _resync(data: bytes, start: int, enc: str) -> int:
-    """First offset >= start holding a record that validates (marker, fits, fields consistent, checksum ok) or END!."""
+    """Seek validated records or a trailer; a stray END! must not hide later records."""
     size = len(data)
     nxt = start
+    trailer_candidate = None
+    prefix_sum = sum(data[:start])
     while nxt < size:
         if data[nxt:nxt + 4] == b"END!":
-            return nxt
-        if data[nxt] == MARKER and nxt + 2 <= size and nxt + 2 + data[nxt + 1] <= size:
-            r, _, iss = _parse_record(data, nxt, enc)
-            if r and not iss:
+            if nxt + 6 > size or prefix_sum & 0xFFFF == int.from_bytes(data[nxt + 4:nxt + 6], 'little'):
                 return nxt
+            if trailer_candidate is None:
+                trailer_candidate = nxt
+        if data[nxt] == MARKER and nxt + 2 <= size:
+            if nxt + 2 + data[nxt + 1] <= size:
+                rec, _, issues = _parse_record(data, nxt, enc)
+                if rec and not issues:
+                    return nxt
+            if _parse_by_fields(data, nxt, enc):
+                return nxt
+        prefix_sum += data[nxt]
         nxt += 1
-    return size
+    return trailer_candidate if trailer_candidate is not None else size
 
 
 def _partial_record(data: bytes, pos: int):
@@ -184,6 +194,14 @@ def decode(data: bytes, name: str) -> Result:
             truncated = True
             break
         if data[pos:pos + 4] == b"END!":
+            checksum_ok = (pos + 6 <= size and
+                           sum(data[:pos]) & 0xFFFF == int.from_bytes(data[pos + 4:pos + 6], 'little'))
+            if not checksum_ok:
+                later = _resync(data, pos + 1, enc)
+                if later < size and data[later] == MARKER:
+                    res.add_damage("unparsed_bytes", pos, "stray END! before a later validated record", True)
+                    pos = later
+                    continue
             trailer_seen = True
             break
         if data[pos] != MARKER:
@@ -241,7 +259,7 @@ def decode(data: bytes, name: str) -> Result:
         for kind in issues:
             res.add_damage(kind, pos, {"bad_length": "record length inconsistent with its fields",
                                        "checksum_mismatch": "record checksum does not match",
-                                       "invalid_value": "invalid due date"}[kind], not rec or kind == "checksum_mismatch")
+                                       "invalid_value": "invalid text, ISBN or due date"}[kind], not rec or kind == "checksum_mismatch")
         pos = end
 
     if trailer_seen:
