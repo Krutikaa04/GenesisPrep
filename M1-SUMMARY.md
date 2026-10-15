@@ -33,15 +33,16 @@ team member's PR review.
 ## Validation
 
 The original checkout had **19 tests**, rather than the 57 described by the
-handoff. The final suite has **82 passing tests**, including the existing
-reference, CLI and mutation suites and 63 new M1 tests.
+handoff. The refined suite has **119 passing tests**, including the existing
+reference, CLI and mutation suites and 100 M1 tests. The first M1 pass had 82
+tests; the reviewed steps 1-4 added 37 more tests.
 
 ```sh
 python -m unittest discover -s tests -p "test_*.py"
 python tools/compare_expected.py
 ```
 
-Results: **82 tests passed; 7/7 organizer reference outputs matched**.
+Results: **119 tests passed; 7/7 organizer reference outputs matched**.
 Tested with Python **3.12.14**. The older system Python 3.9 cannot execute the
 existing CLI test fixture's `ignore_cleanup_errors` argument; no shared test
 file was modified to work around that environment mismatch.
@@ -88,6 +89,8 @@ modules, M1 sections of shared documentation, and this requested report.
 The ownership audit confirmed that other documentation sections, all shared
 engine/model/CLI files, M2/M3 decoders and `samples/official/` are unchanged.
 The output contract, dependencies and runtime offline behavior are unchanged.
+The new accuracy benchmark is M1-owned (`tests/test_fmt_m1_accuracy.py`); shared
+test helpers and M3 evaluation tooling remain untouched.
 
 Progress was committed and pushed to `m1` after successful full-suite and 7/7
 checks. Implementation commits:
@@ -95,9 +98,102 @@ checks. Implementation commits:
 - `cecd406`: LIBRA damage matrix and semantics.
 - `a9c3297`: LABLOG calibration uncertainty and block recovery.
 - `e4c6753`: EBCDIC descriptor and packed-field hardening.
-- `0c89ec8`: final recovery regressions and compound mutations.
+- `0c89ec8`: first-pass recovery regressions and compound mutations.
+- `1abffa4`: independent accuracy fixtures and EBCDIC recovery refinements.
+- `f43e819`: CRC-proven LABLOG repairs and forward scanning.
+- `b46d0da`: LIBRA header uncertainty, unique offset recovery and carried checksums.
+- `ebe5822`: valid declared-chain precedence and VB type-corruption isolation.
+- `8ed6040`: exact lazy interval CRCs and zero-copy candidate probing.
 
 Master has not been merged into or pushed to. Another member must review the
 M1 PR before integration. Shared automatic adapter discovery, M2 work,
 M3 platform changes and the Docker release/parity check remain their owners'
 work; this report does not claim they were completed.
+
+
+## Reviewed improvements: steps 1-4
+
+1. Independent fixtures choose expected fields before encoding. The 205-case
+   regression corpus contains 48 LIBRA, 104 LABLOG, 48 EBCDIC and five negative
+   controls. It checks dispatch, known record fields, missing/unexpected/duplicate
+   records, verification, status, exact damage-kind sets, and explicitly declared
+   metadata assertions. It does not use decoder output as its oracle.
+2. Proven recovery/trust bugs are fixed: LIBRA code-page uncertainty and
+   in-bounds offsets; EBCDIC damaged-header dispatch, block siblings and control
+   text; LABLOG historical units across malformed tables. Cross-review also
+   found and fixed competing LIBRA chains after trailer-only damage and all 255
+   alternative first-record type bytes in a VB block.
+3. LABLOG length repair requires its original stored CRC after reconstructing
+   only length bytes from the known schema. Channel-count inference requires
+   unique intact table/sample corroboration and a failed header CRC. No payload,
+   timestamp, CRC, codec or other unreadable value is guessed.
+4. Repeated scanning/hashing is bounded: LIBRA carries its checksum; LABLOG has
+   monotonic lookahead and history invalidation plus exact indexed interval
+   CRCs and zero-copy candidate probes. Deterministic tests count work, rather
+   than relying only on machine-specific elapsed-time thresholds.
+
+Partial-field salvage (step 5) was not implemented. Existing conservative
+truncation policies, RECFM F evidence limits, and missing s06/s07 goldens remain.
+
+## Measured before/after results
+
+Before means decoder code at `bd30159`; after means code at `8ed6040`. Both
+were run with the exact same final independent corpus on Python 3.12.14.
+For the before run, a temporary archive of the old commit received only the
+new evaluator file. No source fixtures or old decoder code were edited.
+
+| Metric on this 205-case corpus | Before | After |
+|---|---:|---:|
+| Expected records recovered by key | 160/520 | 520/520 |
+| Entire expected records correct | 144/520 | 504/520 |
+| Asserted record fields correct | 1208/2864 | 2832/2864 |
+| Missed expected records | 360 | 0 |
+| Wrong records marked verified | 16 | 0 |
+| Expected uncertainty left unmarked | 72 | 0 |
+| Decoder crashes | 0 | 0 |
+| Format decisions correct | 188/205 | 205/205 |
+| Statuses correct | 100/205 | 205/205 |
+| Damage-kind sets correct | 100/205 | 205/205 |
+
+Record recovery by key does not imply every field is correct. The remaining
+32 incorrect asserted fields are codec-dependent titles/authors in 16 records
+whose header encoding flag was deliberately flipped. The original encoding
+cannot be uniquely inferred from these damaged bytes. Those records remain
+explicitly unverified; the benchmark includes their field errors instead of
+hiding them or guessing an alternate codec. All other asserted record fields
+in this corpus match their independently chosen expectations.
+
+The 24 pristine cases with explicit metadata expectations pass all of those
+assertions. Empty metadata expectations are not counted as metadata accuracy.
+There are zero unexpected or duplicate records in this corpus after refinement.
+These tests deliberately target known risks and are **not a hidden-judge score
+estimate or a general recovery percentage**.
+
+Reproduce the current measurements:
+
+```sh
+python tests/test_fmt_m1_accuracy.py --measure
+python tests/test_fmt_m1_accuracy.py --performance
+```
+
+Performance below is the median of three decoder-only runs on this host for
+800 damaged blocks/records. Times vary with hardware and process load. The
+operation-count tests provide the regression guard; these timings describe
+only the specified bounded patterns.
+
+| Pattern | Input bytes | Before | After |
+|---|---:|---:|---:|
+| LABLOG: repeated-bad-blocks | 4,832 | 766.889 ms | 5.098 ms |
+| LABLOG: dense-overlapping-markers | 6,438 | 1485.678 ms | 3.797 ms |
+| LIBRA-98: malformed-record-prefixes | 28,022 | 37.725 ms | 6.799 ms |
+
+LABLOG's next-candidate cache remains constant-size. When damaged lookahead,
+repair or inference needs it, the lazy CRC prefix uses `2*(N+1)` logical bytes
+plus fixed lookup tables; pristine sequential decoding avoids that allocation.
+This is a deliberate linear-memory tradeoff to eliminate overlapping CRC work.
+Candidate payloads are copied only after block selection; instrumentation bounds
+selected payload copies by input size. Large-file platform limits and Docker
+release validation remain M3's responsibility.
+
+The updated review is [PR #2](https://github.com/Krutikaa04/GenesisPrep/pull/2).
+It remains open for another member's review; master is unchanged.
