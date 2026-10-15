@@ -106,6 +106,26 @@ unverified. s07 contains one deliberately corrupted block.
   reference output exists in this checkout; new golden assertions remain
   conditional on the organizers publishing those outputs.
 
+
+### M1 reviewed refinements (2026-10-16)
+* Before skipping a damaged length, the known table/sample/event schema supplies
+  one candidate length. Repair is accepted only when restoring those two length
+  bytes makes the original stored CRC match. A CRC-valid original always wins;
+  missing CRCs, incomplete payloads and failed reconstructions remain damaged.
+* If the header CRC fails, a unique channel width corroborated by independent
+  CRC-valid table and sample blocks may replace the damaged count. Ambiguity is
+  rejected. Header-derived uncertainty remains on all records/events via
+  `header_checksum`; no metadata verification keys are introduced.
+* A malformed replacement invalidates future calibration but retains the last
+  usable channel-unit list. Historical unit provenance survives malformed tables,
+  and incompatible later unit lists invalidate earlier samples only once each.
+* Lookahead retains the next validated candidate or an exhausted-suffix flag.
+  Repeated bad blocks no longer rescan the same remaining suffix; historical
+  invalidation also advances monotonically. Magic alone is no longer sufficient
+  recognition: coherent header or independent valid-block evidence is required.
+* Truncated-row salvage remains outside this refinement: incomplete blocks are
+  still dropped unless a complete payload and its original CRC prove a repair.
+
 ## VAULT (s08-s10) — container of notes and scans
 | Field | Layout | Status |
 |---|---|---|

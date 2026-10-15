@@ -64,6 +64,22 @@ derived from `samples/official/`. Dates are the working-session dates.
   unverified. Added the regression plus 384 seeded compound-damage cases.
 * Validation: 54 tests passed with Python 3.12.14; reference comparison 7/7.
 
+
+* Review/refinement pass (2026-10-16): six corrupt length values on s05 dropped
+  4/22 samples even though reconstructing only the length made the stored CRC
+  verify. Table/sample/event lengths now use this narrowly validated repair.
+  Tests reject changed CRC/payload, incomplete payload, and ambiguous evidence.
+* A damaged header channel count can be independently corroborated by intact
+  table and sample widths. Unique support restores data without concealing the
+  failed header CRC; zero-channel headers with a valid CRC remain rejected.
+* Valid -> malformed -> changed-unit tables lost historical unit provenance.
+  The last known unit list is retained separately from calibration validity.
+  Repeated table changes now invalidate each historical sample at most once.
+* The former CRC lookahead repeatedly scanned the suffix for every bad block.
+  A constant-size next-candidate/EOF cache removes that repeated scan. Added
+  independent fixtures, engine-level negatives, repair rejection controls, and
+  deterministic CRC-work and historical-invalidation operation guards.
+
 ### VAULT (s08-s10)
 * H1 whole file XORed with a constant key. **Failed** (no key reveals text).
 * H2 logo.bin payload stored raw. **Confirmed**: its SHA-256 matches a 20-byte window of s08 at 205.

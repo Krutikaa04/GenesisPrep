@@ -5,9 +5,11 @@ import math
 import random
 import struct
 import unittest
+from unittest import mock
 
 from helpers import SAMPLES, check_contract
 from deadbits.formats import lablog
+from deadbits.engine import salvage_bytes
 from deadbits.util.checksums import crc16_ccitt_false
 
 
@@ -20,6 +22,22 @@ def header_crc(data):
 def block(typ, payload):
     body = struct.pack('<BH', typ, len(payload)) + payload
     return b'\xb1' + body + struct.pack('<H', crc16_ccitt_false(body))
+
+
+def known_log(blocks=None, nchan=2):
+    """Independent fixture with directly specified calibrated values."""
+    table = block(3, struct.pack('<4sff4sff', b'mV', .5, 1., b'ppm', 2., -3.))
+    samples = block(1, struct.pack('<HBhhhh', 10, 2, 4, 5, -2, -32768))
+    event = block(2, struct.pack('<HBB', 11, 2, 4) + b'test')
+    blocks = [table, samples, event] if blocks is None else blocks
+    header = struct.pack('<4sBBH16sIH', b'LLOG', 1, nchan, 25, b'TEST LOGGER', 0, len(blocks))
+    return header + struct.pack('<H', crc16_ccitt_false(header)) + b''.join(blocks)
+
+
+KNOWN_RECORDS = [
+    {'sample': 10, 'time_ms': 2500, 'values': [3., 7.]},
+    {'sample': 11, 'time_ms': 2750, 'values': [0., None]},
+]
 
 
 class Lablog(unittest.TestCase):
@@ -76,8 +94,11 @@ class Lablog(unittest.TestCase):
                 doc=self.decode(data)
                 self.assertIn('bad_length',self.kinds(doc))
                 self.assertNotIn('count_mismatch',self.kinds(doc))
-                self.assertEqual([{k:v for k,v in r.items() if k not in ('verified','issues')} for r in doc['records']],self.original[4:])
-                self.assertTrue(all(not r['verified'] for r in doc['records']))
+                # The sample count supplies one candidate length and the
+                # original stored CRC proves it: no intact sample is lost.
+                self.assertEqual(doc['records'], self.original)
+                self.assertEqual(self.kinds(doc), ['bad_length'])
+                self.assertFalse(doc['damage'][0]['lossy'])
 
     def test_unknown_block_type(self):
         a,b,_,payload=self.blocks[1]
@@ -123,11 +144,141 @@ class Lablog(unittest.TestCase):
     def test_skipped_replacement_table_taints_later_calibration(self):
         replacement = bytearray(self.data[32:62])
         struct.pack_into('<H', replacement, 2, 65535)
+        replacement[-1] ^= 1  # Length repair must fail without the original CRC proof.
         data = bytearray(self.data[:87] + replacement + self.data[87:])
         struct.pack_into('<H', data, 28, 8)
         doc = self.decode(header_crc(data))
         self.assertEqual(doc['records'][:4], self.original[:4])
         self.assertTrue(all(not r['verified'] and 'bad_length' in r['issues'] for r in doc['records'][4:]))
+
+    def test_known_fixture_values_and_engine_dispatch(self):
+        res = salvage_bytes(known_log(), 'known.bin')
+        self.assertEqual(res.format, 'LABLOG')
+        self.assertEqual(res.status, 'ok')
+        self.assertEqual(res.records, KNOWN_RECORDS)
+        self.assertEqual(res.damage, [])
+        self.assertEqual(res.metadata['events'], [{'sample': 11, 'severity': 2, 'message': 'test'}])
+
+    def test_crc_proven_table_sample_and_event_length_repair(self):
+        original = known_log()
+        positions = (32, 62, 79)
+        for pos in positions:
+            for length in (0, 1, 65535):
+                with self.subTest(pos=pos, length=length):
+                    data = bytearray(original)
+                    struct.pack_into('<H', data, pos + 2, length)
+                    res = salvage_bytes(bytes(data), 'known.bin')
+                    self.assertEqual(res.records, KNOWN_RECORDS)
+                    self.assertEqual(res.metadata['channels'], [{'index': 0, 'unit': 'mV'}, {'index': 1, 'unit': 'ppm'}])
+                    self.assertEqual(res.metadata['events'], [{'sample': 11, 'severity': 2, 'message': 'test'}])
+                    self.assertEqual([d['kind'] for d in res.damage], ['bad_length'])
+                    self.assertFalse(res.damage[0]['lossy'])
+
+    def test_length_repair_requires_original_crc_and_complete_payload(self):
+        original = known_log()
+        for pos, end in ((32, 62), (62, 79), (79, len(original))):
+            data = bytearray(original)
+            struct.pack_into('<H', data, pos + 2, 65535)
+            data[end - 1] ^= 1
+            raw = lablog._block_at(data, pos)
+            self.assertIsNone(lablog._repair_length(data, pos, 2, raw))
+            self.assertIsNone(lablog._repair_length(original[:end - 1], pos, 2, None))
+        # A coherent CRC-valid block with extra payload is not a damaged length.
+        table = original[32:62]
+        malformed = block(1, struct.pack('<HBhhhh', 10, 2, 4, 5, -2, -32768) + b'x')
+        res = lablog.decode(known_log([table, malformed]), 'known.bin')
+        self.assertEqual(res.records, [])
+        self.assertEqual([d['kind'] for d in res.damage], ['bad_length'])
+
+    def test_bad_header_channel_count_needs_independent_corroboration(self):
+        for count in (0, 1, 3, 255):
+            data = bytearray(known_log())
+            data[5] = count  # Header CRC deliberately remains broken.
+            res = salvage_bytes(bytes(data), 'known.bin')
+            self.assertEqual([d['kind'] for d in res.damage], ['header_checksum'])
+            self.assertEqual([{k: v for k, v in r.items() if k not in ('verified', 'issues')} for r in res.records], KNOWN_RECORDS)
+            self.assertTrue(all(r.get('verified') is False and r['issues'] == ['header_checksum'] for r in res.records))
+            self.assertEqual(res.metadata['channels'], [{'index': 0, 'unit': 'mV'}, {'index': 1, 'unit': 'ppm'}])
+            self.assertTrue(all(e.get('verified') is False and e['issues'] == ['header_checksum'] for e in res.metadata['events']))
+        data = bytearray(known_log()); data[5] = 0
+        # A CRC-valid zero-channel header must not be silently replaced.
+        self.assertEqual(lablog.decode(header_crc(data), 'known.bin').records, [])
+        self.assertIsNone(lablog._inferred_channel_count(known_log([known_log()[32:62]])))
+        self.assertIsNone(lablog._inferred_channel_count(known_log([known_log()[62:79]])))
+
+    def test_ambiguous_channel_count_is_not_inferred(self):
+        original = known_log()
+        table3 = block(3, struct.pack('<4sff', b'V', 1., 0.) * 3)
+        sample3 = block(1, struct.pack('<HBhhh', 0, 1, 1, 2, 3))
+        data = bytearray(known_log([original[32:62], original[62:79], table3, sample3]))
+        data[5] = 0
+        self.assertIsNone(lablog._inferred_channel_count(data))
+        self.assertEqual(lablog.decode(bytes(data), 'known.bin').records, [])
+
+    def test_malformed_table_preserves_historical_unit_provenance(self):
+        original = known_log()
+        table, samples = original[32:62], original[62:79]
+        changed = bytearray(table[4:-2]); changed[:4] = b'degC'
+        res = lablog.decode(known_log([table, samples, block(3, b'bad'), block(3, changed)]), 'known.bin')
+        self.assertEqual(res.metadata['channels'][0]['unit'], 'degC')
+        self.assertTrue(all(r.get('verified') is False and 'invalid_value' in r['issues'] for r in res.records))
+        # Without a usable replacement, the original unit list still describes
+        # the intact historical samples; only future calibration is unavailable.
+        res = lablog.decode(known_log([table, samples, block(3, b'bad')]), 'known.bin')
+        self.assertEqual(res.records, KNOWN_RECORDS)
+        self.assertEqual(res.metadata['channels'][0]['unit'], 'mV')
+
+    def test_changed_unit_history_is_invalidated_once_per_record(self):
+        original = known_log()
+        table, samples = original[32:62], original[62:79]
+        blocks = [table]
+        for index in range(80):
+            blocks.append(samples)
+            if index % 7 == 0:
+                blocks.append(block(3, b'bad'))
+            payload = bytearray(table[4:-2])
+            payload[:4] = b'V\0\0\0' if index % 2 == 0 else b'mV\0\0'
+            blocks.append(block(3, payload))
+        original_unverified = lablog.unverified
+        invalidations = {}
+        def counted_unverified(record, *issues):
+            if 'invalid_value' in issues:
+                key = id(record)
+                invalidations[key] = invalidations.get(key, 0) + 1
+            return original_unverified(record, *issues)
+        with mock.patch.object(lablog, 'unverified', side_effect=counted_unverified):
+            res = lablog.decode(known_log(blocks), 'alternating.bin')
+        self.assertEqual(len(res.records), 160)
+        self.assertEqual(len(invalidations), len(res.records))
+        self.assertEqual(set(invalidations.values()), {1})
+        self.assertTrue(all(r.get('verified') is False and r['issues'] == ['invalid_value'] for r in res.records))
+
+    def test_magic_alone_does_not_override_unknown_engine_output(self):
+        for data in (b'LLOG', b'LLOG' + bytes(40), b'LLOG this is ordinary text'):
+            self.assertEqual(lablog.detect(data), 0.)
+            self.assertEqual(salvage_bytes(data, 'text.bin').format, 'UNKNOWN')
+        for data in (known_log()[:16], known_log()[:31]):
+            self.assertGreaterEqual(lablog.detect(data), .5)
+            self.assertEqual(salvage_bytes(data, 'cut.bin').status, 'failed')
+        data = bytearray(known_log()); data[4:8] = bytes(4)
+        self.assertEqual(salvage_bytes(bytes(data), 'bad-header.bin').format, 'LABLOG')
+
+    def test_recovery_lookahead_crc_work_scales_linearly(self):
+        costs = []
+        for count in (100, 200):
+            # Complete bad-CRC blocks with no later valid block used to trigger
+            # a full repeated suffix scan. Count work instead of timing a CPU.
+            data = known_log([b'\xb1\xfa\x00\x00\x00\x00'] * count)
+            checked = []
+            def measured_crc(payload):
+                checked.append(len(payload))
+                return crc16_ccitt_false(payload)
+            with mock.patch.object(lablog, 'crc16_ccitt_false', side_effect=measured_crc):
+                lablog.decode(data, 'hostile.bin')
+            costs.append((len(checked), sum(checked)))
+            self.assertLess(len(checked), 3 * count + 10)
+        self.assertLessEqual(costs[1][0], 2 * costs[0][0] + 2)
+        self.assertLessEqual(costs[1][1], 2 * costs[0][1] + 30)
 
     def test_changed_units_mark_historical_samples_unverified(self):
         payload = bytearray(self.blocks[0][3])
