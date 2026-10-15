@@ -10,6 +10,18 @@ Layout, derived from s18-s19 and confirmed on s18 (expected_outputs). All blocks
   VLIR : block 2 = record index, 127 x (blocks u8, used-bytes-in-last-block u8); (0, 0xFF) = no record;
          record data follows, in index order, 254-byte blocks
 `declared_blocks` counts the info block + (index block) + data blocks, i.e. every block after block 0.
+
+Damage policy (M2):
+  * VLIR: the index and the file size are independent evidence for the block count.  If the index total
+    agrees with the file size but not with `declared_blocks`, the header field is the corrupted one: the
+    records stay verified and only a lossless count_mismatch is reported.  If the index disagrees with both,
+    record boundaries cannot be trusted: every record is flagged unverified + count_mismatch.
+  * A slot with blocks == 0 but a byte count that is not 0 / 0xFF is a corrupted index entry (every later
+    record would be mis-sliced): reported as invalid_value, records flagged unverified.
+  * The last block of a VLIR record is NUL padded (assumption, true on s19): non-NUL bytes after the declared
+    byte count, or a declared count that ends in padding, mean the count is corrupted -> unverified + bad_length.
+  * Text containing PETSCII graphics (no text equivalent -> U+FFFD) is flagged unverified + invalid_value.
+  * SEQ files larger than `declared_blocks` x 254 lose the excess: reported lossy, record unverified.
 """
 from ..model import Result, unverified
 from ..util import petscii
@@ -17,6 +29,7 @@ from ..util import petscii
 NAME = "CVT"
 BLK = 254
 SIG = b"formatted GEOS file V"
+REPLACEMENT = "\ufffd"
 
 
 def detect(data: bytes) -> float:
@@ -30,6 +43,13 @@ def _modified(b: bytes):
     if 1 <= mo <= 12 and 1 <= d <= 31 and h < 24 and mi < 60:
         return "%04d-%02d-%02dT%02d:%02d" % (1900 + y, mo, d, h, mi)
     return None
+
+
+def _flag_graphics(res: Result, rec: dict, offset: int) -> None:
+    if REPLACEMENT in rec.get("text", ""):
+        res.add_damage("invalid_value", offset, "record %d contains PETSCII graphics bytes with no text "
+                       "equivalent" % rec["slot"], True)
+        unverified(rec, "invalid_value")
 
 
 def decode(data: bytes, name: str) -> Result:
@@ -55,7 +75,6 @@ def decode(data: bytes, name: str) -> Result:
     if modified is None:
         res.add_damage("invalid_value", 0x17, "modification timestamp is not a valid date", False)
 
-    have_blocks = (size - BLK + BLK - 1) // BLK          # blocks present after block 0 (last may be partial)
     if size >= 2 * BLK:
         info = data[BLK:2 * BLK]
         res.metadata["class_name"] = petscii.decode_field(info[0:20])
@@ -65,34 +84,49 @@ def decode(data: bytes, name: str) -> Result:
         res.add_damage("index_missing", BLK, "info block is missing or incomplete", True)
 
     body_start = 2 * BLK
-    full = size >= (1 + declared) * BLK
-    if size < (1 + declared) * BLK:
-        res.add_damage("truncated", size, "file holds %d of %d declared blocks" %
-                       (min(have_blocks, declared), declared), True)
-    elif size > (1 + declared) * BLK:
-        res.add_damage("unparsed_bytes", (1 + declared) * BLK, "%d bytes beyond the declared blocks" %
-                       (size - (1 + declared) * BLK), False)
+    declared_end = (1 + declared) * BLK
+    full = size >= declared_end
+    file_total = size // BLK - 1 if size % BLK == 0 else None   # blocks after block 0, when the file is whole blocks
 
-    end = min(size, (1 + declared) * BLK) if declared else size
+    def block_count_damage():
+        if size < declared_end:
+            have = (size + BLK - 1) // BLK - 1
+            res.add_damage("truncated", size, "file holds %d of %d declared blocks" % (min(have, declared), declared), True)
+        elif size > declared_end:
+            res.add_damage("unparsed_bytes", declared_end, "%d bytes beyond the declared blocks" %
+                           (size - declared_end), False)
+
     if structure == "seq":
+        block_count_damage()
+        end = min(size, declared_end) if declared else size
         raw = data[body_start:end]
-        text = petscii.decode(raw.rstrip(b"\0"))
-        rec = {"slot": 0, "text": text}
+        rec = {"slot": 0, "text": petscii.decode(raw.rstrip(b"\0"))}
         if not full:
             unverified(rec, "truncated")
+        elif size > declared_end:
+            res.damage[-1]["lossy"] = True      # excess data is dropped: it may be real content
+            unverified(rec, "count_mismatch")
+        _flag_graphics(res, rec, body_start)
         if size > body_start:
             res.records.append(rec)
     else:
         idx_end = body_start + BLK
         if size < idx_end:
+            block_count_damage()
             res.add_damage("index_missing", body_start, "VLIR record index block is missing or incomplete", True)
         else:
             index = data[body_start:idx_end]
             pos = idx_end
-            used_blocks = 1  # the index block itself counts toward declared_blocks (after info)
+            sum_blocks = 0
+            index_suspect = False
+            first_new = len(res.records)
             for slot in range(127):
                 nb, last = index[2 * slot], index[2 * slot + 1]
                 if nb == 0:
+                    if last not in (0, 0xFF):
+                        index_suspect = True
+                        res.add_damage("invalid_value", body_start + 2 * slot,
+                                       "index slot %d has 0 blocks but byte count %d (expected 0 or 255)" % (slot, last), True)
                     continue
                 need = nb * BLK
                 chunk = data[pos:pos + need]
@@ -104,18 +138,39 @@ def decode(data: bytes, name: str) -> Result:
                     if len(chunk) < need:
                         res.add_damage("truncated", size, "record %d needs %d bytes, %d present" %
                                        (slot, need, len(chunk)), True)
-                    raw = chunk
-                    rec["text"] = petscii.decode(raw.rstrip(b"\0"))
-                    res.records.append(unverified(rec, "truncated" if len(chunk) < need else "bad_length"))
+                    rec["text"] = petscii.decode(chunk.rstrip(b"\0"))
+                    unverified(rec, "truncated" if len(chunk) < need else "bad_length")
                 else:
-                    raw = chunk[:need - BLK + last]
-                    rec["text"] = petscii.decode(raw)
-                    res.records.append(rec)
+                    used = need - BLK + last
+                    rec["text"] = petscii.decode(chunk[:used])
+                    if any(chunk[used:]):        # kit padding is NUL: data after the declared end = count too small
+                        res.add_damage("bad_length", body_start + 2 * slot + 1,
+                                       "record %d: non-padding bytes follow the declared last-block count %d" %
+                                       (slot, last), True)
+                        unverified(rec, "bad_length")
+                    elif chunk[:used].endswith(b"\0"):   # declared end inside the padding = count too large
+                        res.add_damage("bad_length", body_start + 2 * slot + 1,
+                                       "record %d: declared last-block count %d includes NUL padding" %
+                                       (slot, last), False)
+                        rec["text"] = petscii.decode(chunk[:used].rstrip(b"\0"))
+                        unverified(rec, "bad_length")
+                _flag_graphics(res, rec, pos)
+                res.records.append(rec)
                 pos += need
-                used_blocks += nb
-            if full and 1 + used_blocks != declared:
-                res.add_damage("count_mismatch", 0x1C, "index accounts for %d blocks, header declares %d" %
-                               (1 + used_blocks, declared), False)
+                sum_blocks += nb
+            index_total = 2 + sum_blocks          # info + index + data blocks
+            if index_total == declared:
+                block_count_damage()
+            elif file_total is not None and file_total == index_total:
+                res.add_damage("count_mismatch", 0x1C, "header declares %d blocks; the record index and the file "
+                               "size both give %d" % (declared, index_total), False)
+            else:
+                res.add_damage("count_mismatch", 0x1C, "record index accounts for %d blocks, header declares %d, "
+                               "file holds %d" % (index_total, declared, size // BLK - 1), True)
+                index_suspect = True
+            if index_suspect:
+                for rec in res.records[first_new:]:
+                    unverified(rec, "count_mismatch")
 
     if not res.records and res.damage:
         res.status = "failed"

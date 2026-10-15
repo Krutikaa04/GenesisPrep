@@ -12,6 +12,17 @@ index `size` field independently verifies every decoded payload:
                | name_off u32 (into names) | block_off u32 | stored_len u16 | size u16 (decoded length)
   payload    : XOR (xor_key + i) when flags bit1, RLE90 (0x90 n = repeat previous n times) when bit0
                bitmap decoded payload = width u8, height u8, width*height pixel bytes
+
+Damage policy (M2).  The index `size` is the only integrity check VAULT offers, so a record is `verified`
+only when ALL of the following hold; otherwise it is kept but flagged `verified: false` + `issues`:
+  * its block header ("BL" + id) matches the index entry and the block lies inside the file, outside the
+    index table;
+  * the decoded payload length equals the index `size` (when it does not, no sha256 is emitted: a hash of
+    a payload that is known to be the wrong length cannot match and would only look authoritative);
+  * the name is printable text, and a text entry decodes to text without control characters (a wrong
+    xor_key / flipped flag produces length-correct garbage that the size check alone cannot see).
+If the index itself is lost (index_off outside the file) nothing is salvaged: the type, flags and names of
+every block live only in the index, so any record would be a guess -> `failed` + `index_missing`.
 """
 import hashlib
 import struct
@@ -24,6 +35,7 @@ MAGIC = b"VLT1"
 HEADER_LEN = 16
 ENTRY_LEN = 16
 TYPES = {1: "text", 2: "bitmap", 3: "binary"}
+TEXT_OK_CONTROLS = {9, 10, 13}
 
 
 def detect(data: bytes) -> float:
@@ -65,6 +77,14 @@ def _decode_payload(payload: bytes, flags: int, key: int, want: int):
     return (candidates[0] if candidates else None), False
 
 
+def _printable_name(name: str) -> bool:
+    return name != "" and name.isprintable()
+
+
+def _text_plausible(raw: bytes) -> bool:
+    return not any(b < 32 and b not in TEXT_OK_CONTROLS or b == 127 for b in raw)
+
+
 def decode(data: bytes, name: str) -> Result:
     res = Result(name, NAME, "ok")
     size = len(data)
@@ -93,7 +113,11 @@ def decode(data: bytes, name: str) -> Result:
     elif size - (index_off + count * ENTRY_LEN) > 0:
         res.add_damage("unparsed_bytes", index_off + count * ENTRY_LEN,
                        "%d bytes after the index" % (size - index_off - count * ENTRY_LEN), False)
+    index_end = index_off + n * ENTRY_LEN
     names_ok = HEADER_LEN <= names_off <= size
+    if not names_ok:      # root cause once, not once per entry
+        res.add_damage("oob_pointer", 12, "names offset %d is outside the file (size %d): no names can be read" %
+                       (names_off, size), True)
 
     def read_name(off):
         p = names_off + off
@@ -106,53 +130,74 @@ def decode(data: bytes, name: str) -> Result:
         return _xor(raw, key).decode("latin-1")
 
     unverified_any = False
+    seen_ids = set()
     for i in range(n):
-        eid, typ, eflags, name_off, boff, stored, esize = struct.unpack_from("<HBBIIHH", data, index_off + i * ENTRY_LEN)
+        epos = index_off + i * ENTRY_LEN
+        eid, typ, eflags, name_off, boff, stored, esize = struct.unpack_from("<HBBIIHH", data, epos)
         rec = {"id": eid, "name": read_name(name_off), "type": TYPES.get(typ, "binary"), "size": esize}
         issues = []
+
+        def flag(kind, offset, detail, lossy=True):
+            res.add_damage(kind, offset, detail, lossy)
+            if kind not in issues:
+                issues.append(kind)
+
         if rec["name"] is None:
-            issues.append("oob_pointer")
-            res.add_damage("oob_pointer", index_off + i * ENTRY_LEN + 4, "name offset %d outside names table" % name_off, True)
+            if names_ok:
+                flag("oob_pointer", epos + 4, "name offset %d outside names table" % name_off)
+            else:
+                issues.append("oob_pointer")
+        elif not _printable_name(rec["name"]):
+            flag("invalid_value", epos + 4, "name of entry %d is not printable text (wrong xor_key or corrupted)" % eid)
         if typ not in TYPES:
-            issues.append("invalid_value")
-            res.add_damage("invalid_value", index_off + i * ENTRY_LEN + 2, "unknown entry type %d" % typ, False)
+            flag("invalid_value", epos + 2, "unknown entry type %d" % typ, False)
+        if eid in seen_ids:
+            flag("invalid_value", epos, "duplicate entry id %d" % eid, False)
+        seen_ids.add(eid)
         rec["compressed"] = bool(eflags & 1)
         end = boff + stored
         if boff < HEADER_LEN or end > size or stored < 4:
-            kind = "truncated" if boff >= HEADER_LEN and boff < size and end > size and index_off >= size - 1 else "oob_pointer"
-            res.add_damage("oob_pointer", index_off + i * ENTRY_LEN + 8,
-                           "block of entry %d at %d (+%d) is outside the file" % (eid, boff, stored), True)
-            issues.append("oob_pointer")
+            flag("oob_pointer", epos + 8, "block of entry %d at %d (+%d) is outside the file" % (eid, boff, stored))
+            unverified(rec, *issues)
+            res.records.append(rec)
+            unverified_any = True
+            continue
+        if boff < index_end and end > index_off:
+            flag("oob_pointer", epos + 8, "block of entry %d overlaps the index table" % eid)
             unverified(rec, *issues)
             res.records.append(rec)
             unverified_any = True
             continue
         if data[boff:boff + 2] != b"BL" or struct.unpack_from("<H", data, boff + 2)[0] != eid:
-            res.add_damage("oob_pointer", boff, "block header at %d does not match entry %d" % (boff, eid), True)
-            issues.append("oob_pointer")
+            flag("oob_pointer", boff, "block header at %d does not match entry %d" % (boff, eid))
             unverified(rec, *issues)
             res.records.append(rec)
             unverified_any = True
             continue
         decoded, ok = _decode_payload(data[boff + 4:end], eflags, key, esize)
         if decoded is None:
-            res.add_damage("bad_length", boff, "payload of entry %d cannot be decoded" % eid, True)
-            issues.append("bad_length")
+            flag("bad_length", boff, "payload of entry %d cannot be decoded" % eid)
             unverified(rec, *issues)
             res.records.append(rec)
             unverified_any = True
             continue
         if not ok:
-            res.add_damage("bad_length", boff, "decoded payload is %d bytes, index says %d" % (len(decoded), esize), True)
-            issues.append("bad_length")
-        rec["sha256"] = hashlib.sha256(decoded).hexdigest()
+            flag("bad_length", boff, "decoded payload is %d bytes, index says %d" % (len(decoded), esize))
+        else:
+            rec["sha256"] = hashlib.sha256(decoded).hexdigest()
         if typ == 1:
+            if ok and not _text_plausible(decoded):
+                flag("invalid_value", boff, "text of entry %d contains control characters (wrong xor_key or "
+                     "corrupted payload)" % eid)
             try:
                 rec["text"] = decoded.decode("utf-8")
             except UnicodeDecodeError:
                 rec["text"] = decoded.decode("cp437")
         elif typ == 2 and len(decoded) >= 2:
             rec["width"], rec["height"] = decoded[0], decoded[1]
+            if ok and len(decoded) != 2 + decoded[0] * decoded[1]:
+                flag("invalid_value", boff, "bitmap of entry %d is %d bytes, %dx%d needs %d" %
+                     (eid, len(decoded), decoded[0], decoded[1], 2 + decoded[0] * decoded[1]), False)
         if issues:
             unverified(rec, *issues)
             unverified_any = True
