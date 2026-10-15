@@ -1,0 +1,4 @@
+salvage text eol=lf
+*.py text eol=lf
+Dockerfile text eol=lf
+samples/** binary

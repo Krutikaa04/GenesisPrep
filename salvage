@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Run from any directory with relative or absolute paths (do not cd away from the caller).
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PY="$(command -v python3 || command -v python)"
+PYTHONPATH="$HERE${PYTHONPATH:+:$PYTHONPATH}" exec "$PY" -m deadbits.cli "$@"
