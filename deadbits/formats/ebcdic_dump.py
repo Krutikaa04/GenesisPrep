@@ -161,6 +161,15 @@ def _block_at(data: bytes, pos: int):
         return None
     if _record_end(data, pos + 4, end) is not None:
         return end
+    # A damaged type byte must not erase the surrounding block boundary. An
+    # intact first RDW length and the following known RDW independently frame
+    # the first record even when its type is unknown or contradicts its length.
+    first = pos + 4
+    first_length = int.from_bytes(data[first:first+2], 'big')
+    following = first + first_length
+    if (data[first+2:first+4] == b'\0\0' and first_length >= 5 and
+            following <= end and _record_end(data, following, end) is not None):
+        return end
     payload_length = RECORD_LENGTHS.get(data[pos+8], 0)
     stop = pos + 8 + payload_length
     if payload_length and stop <= end:

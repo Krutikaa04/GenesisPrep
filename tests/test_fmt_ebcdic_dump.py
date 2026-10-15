@@ -251,6 +251,23 @@ class Ebcdic(unittest.TestCase):
                 self.assertEqual(self.kinds(doc), ['bad_length'])
                 self.assertEqual(doc['damage'][0]['offset'], 89)
 
+    def test_vb_corrupt_first_record_type_preserves_intact_sibling(self):
+        original, expected = synthetic_extract(True)
+        for kind in range(256):
+            if kind == 0xc4:
+                continue
+            with self.subTest(kind=kind):
+                data = bytearray(original)
+                data[93] = kind  # Block 2 first student's type; RDWs/BDWs intact.
+                result = salvage_bytes(bytes(data), 'known.000')
+                doc = check_contract(self, result, len(data))
+                self.assertEqual(doc['format'], 'EBCDIC-DUMP')
+                self.assertEqual(doc['status'], 'partial')
+                self.assertEqual(doc['records'], [expected[0], expected[2]])
+                expected_kind = 'bad_length' if kind in (0xc8, 0xe3) else 'unknown_record'
+                self.assertEqual(self.kinds(doc), [expected_kind])
+                self.assertEqual(doc['damage'][0]['offset'], 89)
+
     def test_damaged_header_fields_still_dispatch_using_independent_students(self):
         for blocked in (False, True):
             original, expected = synthetic_extract(blocked)

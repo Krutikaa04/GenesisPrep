@@ -2,6 +2,7 @@
 
 Run tests normally, or measure with:
   python tests/test_fmt_m1_accuracy.py --measure
+  python tests/test_fmt_m1_accuracy.py --performance
 The expectations below are specified before encoding; the decoder never creates
 its own expected values. The corpus is synthetic regression evidence, not a
 prediction of a hidden judge score. No official fixture is modified.
@@ -280,14 +281,17 @@ def performance():
                        checked_out=False, deleted=False, reference_only=False)
             payload += b'\xa5\0' + _libra_record(rec)
         damaged_libra = bytes(payload) + b'END!' + struct.pack('<H', sum(payload) & 65535)
-        for fmt, data, decode in (('LABLOG', bad_logs, lablog.decode),
-                                  ('LIBRA-98', damaged_libra, libra98.decode)):
+        dense_header = bytearray(_lablog(0)[0].data[:32])
+        dense = bytes(dense_header) + (b'\xb1\xfa' + struct.pack('<H', count*4))*count + bytes(count*4+6)
+        for fmt, pattern, data, decode in (('LABLOG', 'repeated-bad-blocks', bad_logs, lablog.decode),
+                                         ('LABLOG', 'dense-overlapping-markers', dense, lablog.decode),
+                                         ('LIBRA-98', 'malformed-record-prefixes', damaged_libra, libra98.decode)):
             elapsed = []
             for _ in range(3):
                 started = time.perf_counter()
                 decode(data, 'bounded-performance')
                 elapsed.append((time.perf_counter() - started) * 1000)
-            rows.append(dict(format=fmt, blocks_or_records=count, bytes=len(data),
+            rows.append(dict(format=fmt, pattern=pattern, blocks_or_records=count, bytes=len(data),
                              median_runtime_ms=round(sorted(elapsed)[1], 3)))
     return rows
 

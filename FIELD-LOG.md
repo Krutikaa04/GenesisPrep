@@ -49,6 +49,11 @@ derived from `samples/official/`. Dates are the working-session dates.
   makes measured checksum work linear with constant extra checksum memory.
   Added deterministic byte-work guards and independent vendor/compound-damage
   negative controls. A stray final END! gap now reaches the validated trailer.
+* Cross-review found a stronger additive-collision case: valid chains at 16/270
+  and a trailer-only +1 error could select the wrong earlier chain. Offset repair
+  now refuses to override an intact declared chain, even when one alternative
+  restores the checksum. The genuine nested-chain regression preserves both
+  declared records and reports only the actual trailer mismatch.
 
 ### LABLOG (s05-s07)
 * H1 `start` is unix time. **Failed**: gives 1972-10-11T05:07:43Z - right month/day/time, year 20 too low.

@@ -76,6 +76,9 @@ resync on the next valid record; truncation inside a record keeps only fully rea
   actual file checksum damage. Vendor-header bytes are not blindly scanned.
 * Recomputed trailers, compound checksum damage, appended bytes and competing
   record chains do not establish a unique earlier offset; they remain uncertain.
+  An already intact, count-valid declared chain always wins over an alternative
+  suggested by a trailer checksum error. Additive collisions cannot overturn
+  intact framing evidence.
 * Resynchronization carries its prefix checksum and parsed records advance it
   on non-overlapping memoryview ranges. Repeated local damage no longer sums
   the same file prefix repeatedly; additional checksum state is constant-size.
@@ -213,7 +216,9 @@ Confirmed on s20 expected; trailer totals reconcile on s20/s21 (402, 546).
 * VB boundary evidence now uses known RDW framing independently of the first
   student's semantic field validity. A damaged first RDW may be bounded by its
   fixed schema and an intact following RDW; the damaged record is still dropped,
-  while its intact sibling remains recoverable. No partial-field salvage is added.
+  while its intact sibling remains recoverable. An intact RDW length plus a
+  coherent following sibling also preserves the boundary if the first record's
+  type byte is unknown or inconsistent. No partial-field salvage is added.
 * A damaged header date/title can still identify the format when the header
   descriptor and two credible student records independently establish framing.
   Detection inspects at most eight records. With fewer independent records,

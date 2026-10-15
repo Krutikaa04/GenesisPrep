@@ -140,13 +140,19 @@ def _recover_data_offset(data: bytes, declared: int, count: int, enc: str):
     """Repair only a uniquely corroborated pointer, not arbitrary vendor-header bytes.
 
     Each candidate must explain the declared count, every record checksum, and
-    the final file checksum after correcting ONLY the pointer. An intact file,
-    a compound checksum failure, or competing valid chains does not authorize
-    guessing another start. The two-byte pointer admits at most 256 candidates.
+    the final file checksum after correcting ONLY the pointer. A complete valid
+    declared chain, an intact file, a compound checksum failure, or competing
+    valid chains does not authorize guessing another start. The two-byte
+    pointer admits at most 256 candidates.
     """
     if declared <= HEADER_LEN or not count or data[-6:-2] != b"END!":
         return None
     stop = len(data) - 6
+    # A damaged trailer must not make record-like vendor bytes replace an
+    # already complete, count-valid chain at the declared start. Additive
+    # checksum coincidences cannot overturn that independent framing evidence.
+    if _valid_chain(data, declared, stop, count, enc):
+        return None
     actual = sum(memoryview(data)[:stop]) & 0xFFFF
     stored = int.from_bytes(data[-2:], "little")
     if actual == stored:

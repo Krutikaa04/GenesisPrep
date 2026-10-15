@@ -423,6 +423,39 @@ class LibraIndependent(unittest.TestCase):
         self.assertEqual(doc["records"], [dict(blank, id=5004, title="b" * 79)])
         self.assertNotIn("invalid_value", [d["kind"] for d in doc["damage"]])
 
+    def test_valid_declared_chain_wins_over_alternate_checksum_restoration(self):
+        blank = dict(KNOWN_RECORDS[1], author="")
+        first = dict(blank, id=5003, title="a" * 53)
+        last = dict(blank, id=5004, title="b" * 80)
+        outer_first = record_bytes(dict(blank, id=5001, title="p" * 157))
+        inner_first, inner_last = record_bytes(first), record_bytes(last)
+        # The declared chain [270, 350] and a record-like vendor chain
+        # [16, 200] both end at 457. Their starting offsets have byte sums
+        # 15 and 16, so a trailer-only +1 error appears to "prove" offset 16.
+        title = b"q" * 62 + inner_first + inner_last[:88]
+        self.assertEqual(len(title), 230)
+        body = bytearray(struct.pack("<BI", 0, 5002) + b"\xe6" + title + inner_last[88:])
+        body[6] = (body[-1] - sum(body[:-1]) + body[6]) & 255
+        header = bytearray(known_file()[:16])
+        struct.pack_into("<H", header, 12, 270)
+        payload = bytes(header) + outer_first + b"\xa5\xff" + body
+        self.assertEqual(len(payload), 457)
+        data = payload + b"END!" + struct.pack("<H", sum(payload) & 65535)
+        self.assertTrue(libra98._valid_chain(data, 16, 457, 2, "cp437"))
+        self.assertTrue(libra98._valid_chain(data, 270, 457, 2, "cp437"))
+        pristine = self.decode(data)
+        self.assertEqual(pristine["status"], "ok")
+        self.assertEqual(pristine["records"], [first, last])
+        self.assertEqual(pristine["damage"], [])
+
+        mutant = data[:-2] + struct.pack("<H", (sum(payload) + 1) & 65535)
+        self.assertIsNone(libra98._recover_data_offset(mutant, 270, 2, "cp437"))
+        doc = self.decode(mutant)
+        self.assertEqual(doc["records"], [first, last])
+        self.assertEqual(doc["metadata"]["data_offset"], 270)
+        self.assertEqual(doc["status"], "partial")
+        self.assertEqual([d["kind"] for d in doc["damage"]], ["checksum_mismatch"])
+
     def test_stray_end_before_verified_final_trailer_reports_only_gap(self):
         for garbage in (b"END!xx", b"END!xxEND!yy", b"END!xxjunkEND!zz"):
             with self.subTest(garbage=garbage):
