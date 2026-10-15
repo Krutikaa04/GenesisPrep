@@ -43,12 +43,17 @@ def _iso8(text: str):
         return None
 
 
+def _printable(raw: bytes) -> bool:
+    """Allow printable cp037 text, including accented letters, but no controls."""
+    return all(char.isprintable() for char in raw.decode('cp037'))
+
+
 def _credible(rec: bytes) -> bool:
     """Stricter evidence for resynchronisation than a length/type byte alone."""
     if not rec or len(rec) != RECORD_LENGTHS.get(rec[0]):
         return False
     if rec[0] == H:
-        return (all(32 <= ord(c) < 127 for c in rec[1:21].decode('cp037')) and
+        return (_printable(rec[1:21]) and
                 _iso8(rec[21:29].decode('cp037')) is not None)
     if rec[0] == T:
         return all(_packed(part) is not None and _packed(part) >= 0
@@ -56,22 +61,70 @@ def _credible(rec: bytes) -> bool:
     body = rec[1:]
     dob = _packed(body[26:31])
     return (all(0xf0 <= c <= 0xf9 for c in body[:6]) and
-            all(32 <= ord(c) < 127 for c in body[6:26].decode('cp037')) and
+            _printable(body[6:26]) and _printable(body[36:37]) and
             dob is not None and 0 <= dob <= 99999999 and
             _iso8('%08d' % dob) is not None and
             _packed(body[31:34]) is not None and _packed(body[37:41]) is not None)
 
 
+def _record_end(data: bytes, pos: int, end: int):
+    """A complete known record descriptor, independent of field validity."""
+    if pos + 5 > end or data[pos+2:pos+4] != b'\0\0':
+        return None
+    expected = RECORD_LENGTHS.get(data[pos+4])
+    length = int.from_bytes(data[pos:pos+2], 'big')
+    if expected is not None and length == expected + 4 and pos + length <= end:
+        return pos + length
+    return None
+
+
+def _damaged_header_evidence(data: bytes, layout: str) -> bool:
+    """Recognize a damaged H field only with two independently credible D records.
+
+    Inspect at most eight coherently framed records; detection never copies or
+    scans a whole suffix merely because a header field is malformed.
+    """
+    pos = 0 if layout == 'V' else 4
+    if _record_end(data, pos, len(data)) != pos + 33 or data[pos+4] != H:
+        return False
+    block_end = len(data)
+    if layout == 'VB':
+        block_end = int.from_bytes(data[:2], 'big')
+        if data[2:4] != b'\0\0' or not pos + 33 <= block_end <= len(data):
+            return False
+    students = 0
+    for _ in range(8):
+        if pos == block_end and layout == 'VB':
+            if pos + 4 > len(data) or data[pos+2:pos+4] != b'\0\0':
+                return False
+            length = int.from_bytes(data[pos:pos+2], 'big')
+            block_end = pos + length
+            if length < 9 or block_end > len(data):
+                return False
+            pos += 4
+        stop = _record_end(data, pos, block_end)
+        if stop is None:
+            return False
+        if data[pos+4] == D and _credible(data[pos+4:stop]):
+            students += 1
+            if students == 2:
+                return True
+        pos = stop
+    return False
+
+
 def _layout(data: bytes):
-    """Require recognizable header contents, even when a descriptor is damaged."""
+    """Require a credible header or independently evidenced damaged-header framing."""
     for layout, off in (('V', 4), ('VB', 8)):
         if _credible(data[off:off + 29]) and data[off:off + 1] == bytes([H]):
             return layout
         # Short known-length header: retain conservative truncated recognition.
-        prefix = data[off:]
+        prefix = data[off:off + 29]
         if (9 <= len(prefix) < 29 and prefix[0] == H and
                 data[off-4:off] == b'\x00\x21\x00\x00' and
-                all(32 <= ord(c) < 127 for c in prefix[1:].decode('cp037'))):
+                _printable(prefix[1:])):
+            return layout
+        if _damaged_header_evidence(data, layout):
             return layout
     return None
 
@@ -88,27 +141,33 @@ def detect(data: bytes) -> float:
 def _next_record(data: bytes, start: int, end: int):
     """Seek only complete, schema-consistent known records inside the region."""
     for pos in range(start, max(start, end - 4)):
-        if data[pos+2:pos+4] != b'\0\0':
-            continue
-        length = int.from_bytes(data[pos:pos+2], 'big')
-        if length >= 5 and pos + length <= end and _credible(data[pos+4:pos+length]):
+        stop = _record_end(data, pos, end)
+        if stop is not None and _credible(data[pos+4:stop]):
             return pos
     return None
 
 
 def _block_at(data: bytes, pos: int):
-    """A plausible complete BDW followed by a credible RDW record."""
+    """A complete BDW supported by record framing, not student field semantics.
+
+    An invalid first RDW can also be bounded by the fixed schema and a following
+    intact RDW, or an independently credible sole payload. All probes are bounded.
+    """
     if pos + 9 > len(data) or data[pos+2:pos+4] != b'\0\0':
         return None
     length = int.from_bytes(data[pos:pos+2], 'big')
     end = pos + length
-    if length < 9 or end > len(data) or data[pos+6:pos+8] != b'\0\0':
+    if length < 9 or end > len(data):
         return None
-    # A damaged first RDW must not hide an otherwise evidenced BDW boundary.
-    # The known payload schema can establish the first record independently.
-    payload_length = RECORD_LENGTHS.get(data[pos+8], 0)
-    if payload_length and pos + 8 + payload_length <= end and _credible(data[pos+8:pos+8+payload_length]):
+    if _record_end(data, pos + 4, end) is not None:
         return end
+    payload_length = RECORD_LENGTHS.get(data[pos+8], 0)
+    stop = pos + 8 + payload_length
+    if payload_length and stop <= end:
+        if _record_end(data, stop, end) is not None:
+            return end
+        if stop == end and _credible(data[pos+8:stop]):
+            return end
     return None
 
 
@@ -132,11 +191,14 @@ def decode(data: bytes, name: str) -> Result:
         nonlocal trailer, d_count, credits_sum, framing_lost
         kind = rec[0]
         if kind == H:
-            res.metadata['title'] = rec[1:21].decode('cp037').rstrip()
+            title_ok = _printable(rec[1:21])
+            res.metadata['title'] = rec[1:21].decode('cp037').rstrip() if title_ok else None
             date = _iso8(rec[21:29].decode('cp037'))
             res.metadata['run_date'] = date
             if date is None:
                 res.add_damage('invalid_value', pos, 'invalid header run date', False)
+            if not title_ok:
+                res.add_damage('invalid_value', pos, 'header title contains control characters', True)
         elif kind == D:
             body = rec[1:]
             issues = list(parent_issues)
@@ -144,14 +206,16 @@ def decode(data: bytes, name: str) -> Result:
             dob = _iso8('%08d' % dob_n) if dob_n is not None and 0 <= dob_n <= 99999999 else None
             gpa_n, bal_n = _packed(body[31:34]), _packed(body[37:41])
             student_id = body[:6].decode('cp037')
+            name_ok, status_ok = _printable(body[6:26]), _printable(body[36:37])
             if (dob is None or gpa_n is None or bal_n is None or
-                    not student_id.isascii() or not student_id.isdigit()):
+                    not student_id.isascii() or not student_id.isdigit() or
+                    not name_ok or not status_ok):
                 issues.append('invalid_value')
-                res.add_damage('invalid_value', pos, 'record has invalid identifier/date/packed fields', True)
+                res.add_damage('invalid_value', pos, 'record has invalid identifier/text/date/packed fields', True)
             credits = int.from_bytes(body[34:36], 'big')
-            out = {'student_id': student_id, 'name': body[6:26].decode('cp037').rstrip(),
+            out = {'student_id': student_id, 'name': body[6:26].decode('cp037').rstrip() if name_ok else None,
                    'dob': dob, 'gpa': None if gpa_n is None else round(gpa_n / 100, 2),
-                   'credits': credits, 'status': body[36:37].decode('cp037'),
+                   'credits': credits, 'status': body[36:37].decode('cp037') if status_ok else None,
                    'balance': None if bal_n is None else round(bal_n / 100, 2)}
             if issues:
                 unverified(out, *issues)

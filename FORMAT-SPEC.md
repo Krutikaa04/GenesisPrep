@@ -165,6 +165,22 @@ Confirmed on s20 expected; trailer totals reconcile on s20/s21 (402, 546).
 * There is no per-record integrity checksum. Plausible changes to names, IDs,
   dates, GPA, status or balance can pass structural validation undetected.
 
+
+### M1 reviewed refinements (2026-10-16)
+* VB boundary evidence now uses known RDW framing independently of the first
+  student's semantic field validity. A damaged first RDW may be bounded by its
+  fixed schema and an intact following RDW; the damaged record is still dropped,
+  while its intact sibling remains recoverable. No partial-field salvage is added.
+* A damaged header date/title can still identify the format when the header
+  descriptor and two credible student records independently establish framing.
+  Detection inspects at most eight records. With fewer independent records,
+  damaged-header files may deliberately remain unrecognized.
+* Printable cp037 accents are valid text; control-corrupt title, name or status
+  fields become null with `invalid_value`. Affected students are unverified.
+  No undocumented GPA/status domain restrictions are introduced.
+* Resynchronization filters fixed schema lengths before slicing payloads, so
+  hostile large descriptors cannot repeatedly copy large payload suffixes.
+
 ## PAK (s24) and WAD (s23) — game archives
 PAK: `PACK`, dir_off u32, dir_len u32; 64-byte entries name[56] + offset u32 + size u32.
 WAD: `IWAD`/`PWAD`, numlumps u32, dir_off u32; 16-byte entries offset u32, size u32, name[8]

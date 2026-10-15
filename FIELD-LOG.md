@@ -110,6 +110,19 @@ derived from `samples/official/`. Dates are the working-session dates.
 * Validation: 75 tests passed with Python 3.12.14; reference comparison 7/7;
   s20/s21 remain ok and s22 remains partial with one truncation root cause.
 
+
+* Review/refinement pass (2026-10-16): invalid DOB in the next VB block's first
+  student made the preceding BDW look invalid and lost both students in that
+  block. Boundary proofs now use framing instead of semantic student validity.
+  Corrupt first-RDW reserved bytes also preserve the intact sibling.
+* Direct-only invalid-header-date tests hid a dispatch failure: end-to-end
+  salvage returned UNKNOWN with zero students. Added bounded independent
+  record evidence plus engine/CLI regressions and strict negative controls.
+* Independent synthetic V/VB fixtures exposed another generalization issue:
+  printable accented cp037 names were rejected by ASCII-only credibility.
+  Printable accents are now accepted, while control-corrupt fields are null
+  and unverified. Tests also guard bounded detection and payload-scan work.
+
 ### CVT (s18-s19)
 * H1 signature at 0x21. **Failed** (detection missed every file); it starts at 0x1E (`PRG formatted ...`).
 * H2 ASCII-style letter case. **Failed**: 0x41-0x5A are lower case and 0xC1-0xDA upper case in PETSCII.
