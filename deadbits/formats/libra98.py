@@ -63,6 +63,13 @@ def _parse_record(data: bytes, pos: int, enc: str):
             due_iso = dosdate.iso_date(due)
             if due_iso is None:
                 issues.append("invalid_value")
+        if not all(c in b"0123456789X" for c in isbn):
+            issues.append("invalid_value")
+        try:
+            title.decode(enc)
+            author.decode(enc)
+        except UnicodeDecodeError:
+            issues.append("invalid_value")
         if sum(body[:-1]) & 0xFF != chk:
             issues.append("checksum_mismatch")
         rec = {
@@ -80,7 +87,7 @@ def _parse_record(data: bytes, pos: int, enc: str):
         }
     except (IndexError, struct.error):
         issues.append("bad_length")
-    return rec, end, issues
+    return rec, end, sorted(set(issues))
 
 
 def _parse_by_fields(data: bytes, pos: int, enc: str):
@@ -165,10 +172,17 @@ def decode(data: bytes, name: str) -> Result:
                        (data_off, size, HEADER_LEN), True)
         pos = HEADER_LEN
 
-    unverified_any = False
+    unknown_version = version != 2
+    if unknown_version:
+        res.add_damage("unknown_record", 4, "version %d is not confirmed; known record layout attempted" % version, False)
+    unverified_any = unknown_version
     truncated = False
     trailer_seen = False
     while pos < size:
+        if size - pos < 4 and b"END!".startswith(data[pos:]):
+            res.add_damage("truncated", pos, "file ends inside the trailer marker", False)
+            truncated = True
+            break
         if data[pos:pos + 4] == b"END!":
             trailer_seen = True
             break
@@ -180,6 +194,19 @@ def decode(data: bytes, name: str) -> Result:
             pos = end
             continue
         if pos + 2 > size or pos + 2 + data[pos + 1] > size:
+            # The length byte is outside the record checksum. Try field-delimited
+            # recovery before treating an exaggerated length as a real EOF cut.
+            alt = _parse_by_fields(data, pos, enc)
+            if alt:
+                res.records.append(alt[0])
+                res.add_damage("bad_length", pos + 1, "record length exceeds file; fields and checksum recovered", False)
+                pos = alt[1]
+                continue
+            later = _resync(data, pos + 1, enc)
+            if later < size:
+                res.add_damage("bad_length", pos + 1, "record length exceeds file; resynchronised at %d" % later, True)
+                pos = later
+                continue
             truncated = True
             part = _partial_record(data, pos)
             if part:
@@ -221,6 +248,7 @@ def decode(data: bytes, name: str) -> Result:
         stored_pos = pos + 4
         if stored_pos + 2 > size:
             res.add_damage("truncated", pos, "file ends inside the trailer", False)
+            truncated = True
         else:
             stored = struct.unpack_from("<H", data, stored_pos)[0]
             if sum(data[:pos]) & 0xFFFF != stored:
@@ -237,7 +265,18 @@ def decode(data: bytes, name: str) -> Result:
         res.add_damage("count_mismatch", 6, "header declares %d records, %d found" % (count, found_n),
                        found_n < count)
 
-    lost = any(d["lossy"] for d in res.damage)
+    # Preserve duplicate records rather than silently overwriting keyed data.
+    by_id = {}
+    for rec in res.records:
+        by_id.setdefault(rec["id"], []).append(rec)
+        if unknown_version:
+            unverified(rec, "unknown_record")
+    for rid, records in by_id.items():
+        if len(records) > 1:
+            res.add_damage("invalid_value", data_off if data_off <= size else HEADER_LEN,
+                           "duplicate record id %d (%d occurrences retained)" % (rid, len(records)), False)
+            for rec in records:
+                unverified(rec, "invalid_value")
     if not res.records and res.damage:
         res.status = "failed"
     elif res.damage or unverified_any:

@@ -18,6 +18,20 @@ derived from `samples/official/`. Dates are the working-session dates.
   bit0 = 1. s02 uses cp437 (`0x82` = é).
 * Open: flag bits 1-2 meaning (deleted / reference_only) cannot be confirmed from the 2 reference files.
 
+
+* M1-1/2 (2026-10-16): added the LIBRA damage matrix and semantics tests.
+  Oversized record lengths originally bypassed field recovery and swallowed
+  later intact records; recovery now precedes the EOF decision. Partial trailer
+  checksums also used to allow a spurious count mismatch; now suppressed.
+* Duplicate IDs are preserved and flagged, not silently collapsed. Unknown
+  versions are attempted conservatively and flagged on every recovered record.
+* Invalid ISBN bytes and undefined text bytes now produce `invalid_value`.
+  Failed test hypothesis: a low DOS-date byte of `0xFF` is always invalid; it
+  actually encodes July 31. The invalid-date mutation uses day zero instead.
+* Validation: 36 tests passed with Python 3.12.14; reference comparison 7/7.
+  System Python 3.9 cannot run the existing CLI fixture's
+  `TemporaryDirectory(ignore_cleanup_errors=True)`; no M3 file was changed.
+
 ### LABLOG (s05-s07)
 * H1 `start` is unix time. **Failed**: gives 1972-10-11T05:07:43Z - right month/day/time, year 20 too low.
 * H2 epoch 1990-01-01. **Confirmed**: `1992-10-11T05:07:43Z` (s05 expected).

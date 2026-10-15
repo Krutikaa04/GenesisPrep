@@ -32,6 +32,29 @@ fields are self-delimiting, so the record is recovered if its checksum verifies 
 resync on the next valid record; truncation inside a record keeps only fully read fields (`id`).
 `count_mismatch` only when the file is complete.
 
+
+### M1 hardening decisions (2026-10-16)
+* Length recovery also runs when the declared length goes past EOF. It requires
+  self-consistent fields, a valid record checksum, an ISBN made of digits/`X`, and
+  a valid due date. Otherwise the scan seeks a later validated record/trailer.
+* Deleted/reference-only records remain present. Bits 1/2 remain an **assumption**
+  (organizer question Q1 in PROJECT-HANDOFF.txt); this work does not confirm them.
+* Truncated records intentionally expose only a fully read `id`, with
+  `verified:false` and `issues:["truncated"]`. Other incomplete record fields are omitted.
+* Duplicate IDs are all retained and marked unverified with `invalid_value`;
+  uniqueness is an **assumption**, so duplicate damage is lossless.
+* Version 2 is the only confirmed layout. Other versions attempt that layout,
+  report `unknown_record`, and mark recovered records unverified (**assumption**).
+  Version-2 extended headers use `data_offset`, not a fixed record start.
+* Counts are compared only after a complete trailer; a partial `END!` marker or
+  checksum reports truncation without a secondary count error. An out-of-file
+  data offset is ambiguous (pointer corruption or an extended header cut short):
+  report `oob_pointer`, recover from offset 16 if possible, and report a missing
+  trailer as `truncated` rather than claiming a complete file.
+* A damaged file checksum does not invalidate independently checksummed records.
+  Additive checksums are not collision-resistant; compensating byte changes,
+  and the header's unprotected encoding flag, cannot prove original text identity.
+
 ## LABLOG (s05-s07) — instrument data logger
 | Field | Layout | Status |
 |---|---|---|
