@@ -152,7 +152,7 @@ def cases():
         keys=frozenset(r['id'] for r in base.records)
         for label,offset in (('offset-middle',start+1),('offset-next-record',start+len(_libra_record(base.records[0])))):
             data=bytearray(base.data);struct.pack_into('<H',data,12,offset)
-            result.append(_variant(base,label,data,damage=frozenset({'oob_pointer','checksum_mismatch'}),uncertain=keys))
+            result.append(_variant(base,label,data,damage=frozenset({'invalid_value','checksum_mismatch'}),uncertain=keys))
         data=bytearray(base.data);data[5]^=1
         result.append(_variant(base,'encoding-header-flip',data,damage=frozenset({'checksum_mismatch'}),uncertain=keys))
         data=bytearray(base.data);data[-1]^=1
@@ -262,6 +262,35 @@ def measure():
         summaries[fmt]=summary
     return {'corpus':'M1 independent regression corpus v1','by_format':summaries,'cases':rows}
 
+def performance():
+    """Bounded decoder timings; deterministic complexity guards live in tests."""
+    from deadbits.formats import lablog, libra98
+    rows = []
+    for count in (200, 400, 800):
+        header = bytearray(_lablog(0)[0].data[:32])
+        struct.pack_into('<H', header, 28, count)
+        struct.pack_into('<H', header, 30, _crc(header[:30]))
+        bad_logs = bytes(header) + b'\xb1\x01\0\0\0\0' * count
+        header = b'LB98' + struct.pack('<BBHHHHH', 2, 0, count,
+                                      _dos_date(1999,1,2), 0, 16, 1)
+        payload = bytearray(header)
+        for index in range(count):
+            rec = dict(id=index, title='Bench', author='A', year=1900,
+                       price_cents=100, copies=1, isbn='1000000000',
+                       checked_out=False, deleted=False, reference_only=False)
+            payload += b'\xa5\0' + _libra_record(rec)
+        damaged_libra = bytes(payload) + b'END!' + struct.pack('<H', sum(payload) & 65535)
+        for fmt, data, decode in (('LABLOG', bad_logs, lablog.decode),
+                                  ('LIBRA-98', damaged_libra, libra98.decode)):
+            elapsed = []
+            for _ in range(3):
+                started = time.perf_counter()
+                decode(data, 'bounded-performance')
+                elapsed.append((time.perf_counter() - started) * 1000)
+            rows.append(dict(format=fmt, blocks_or_records=count, bytes=len(data),
+                             median_runtime_ms=round(sorted(elapsed)[1], 3)))
+    return rows
+
 
 class IndependentM1Fixtures(unittest.TestCase):
     def test_crc_reference_vector(self):
@@ -281,6 +310,25 @@ class IndependentM1Fixtures(unittest.TestCase):
                     self.assertEqual(result[metric],1,metric)
                 self.assertEqual(result['wrong_verified_records'],0)
 
+    def test_targeted_damage_preserves_truth_and_verification(self):
+        for case in cases():
+            with self.subTest(case=case.name):
+                res = salvage_bytes(case.data, case.name)
+                doc = check_contract(self, res, len(case.data))
+                json.dumps(doc, allow_nan=False)
+                result = score(case, doc)
+                for metric in ('format_correct', 'status_correct', 'damage_correct', 'metadata_correct'):
+                    self.assertEqual(result[metric], 1, (metric, doc))
+                for metric in ('missed_records', 'unexpected_records', 'duplicate_records',
+                               'wrong_verified_records', 'trust_violations'):
+                    self.assertEqual(result[metric], 0, (metric, doc))
+                # A flipped unprotected codec flag cannot establish the original
+                # text. Keep this case in measured field accuracy and require
+                # uncertainty, rather than pretending a guessed codec is correct.
+                if not case.name.endswith('/encoding-header-flip'):
+                    self.assertEqual(result['correct_fields'], result['expected_fields'])
+                    self.assertEqual(result['correct_records'], result['expected_records'])
+
     def test_scoring_detects_wrong_fields_and_false_assurance(self):
         case=Case('oracle',b'','LIBRA-98',[{'id':1,'title':'expected'}],'id',uncertain=frozenset({1}))
         doc=dict(format='LIBRA-98',status='ok',records=[{'id':1,'title':'wrong'}],damage=[],metadata={})
@@ -294,7 +342,9 @@ class IndependentM1Fixtures(unittest.TestCase):
 
 
 if __name__=='__main__':
-    if '--measure' in sys.argv:
+    if '--performance' in sys.argv:
+        print(json.dumps(performance(), indent=2))
+    elif '--measure' in sys.argv:
         print(json.dumps(measure(),indent=2,sort_keys=True))
     else:
         unittest.main()

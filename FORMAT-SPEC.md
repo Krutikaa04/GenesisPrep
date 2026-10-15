@@ -60,6 +60,29 @@ resync on the next valid record; truncation inside a record keeps only fully rea
   Additive checksums are not collision-resistant; compensating byte changes,
   and the header's unprotected encoding flag, cannot prove original text identity.
 
+
+### M1 reviewed refinements (2026-10-16)
+* Record checksums establish raw bytes, not the header's code-page choice.
+  This refines the earlier trailer-damage policy: ASCII remains independent,
+  while codec-dependent non-ASCII titles/authors are unverified when trailer
+  integrity is unavailable (`checksum_mismatch`, or `truncated` if incomplete).
+  A damaged trailer alone is indistinguishable from a flipped encoding flag;
+  the decoder never guesses an alternate codec to make the text look plausible.
+* Version-2 in-bounds offset repair requires an earlier intact chain of exactly
+  the declared count, a complete final trailer at EOF, and restoration of the
+  stored file checksum by changing only the pointer bytes. At most 256 candidates
+  are tested. More than one valid chain rejects repair. Raw metadata.data_offset
+  is retained; the mismatch is lossless `invalid_value` at byte 12, alongside the
+  actual file checksum damage. Vendor-header bytes are not blindly scanned.
+* Recomputed trailers, compound checksum damage, appended bytes and competing
+  record chains do not establish a unique earlier offset; they remain uncertain.
+* Resynchronization carries its prefix checksum and parsed records advance it
+  on non-overlapping memoryview ranges. Repeated local damage no longer sums
+  the same file prefix repeatedly; additional checksum state is constant-size.
+* A stray `END!` immediately before the real checksum-valid final trailer now
+  reports the inserted gap and finishes at the real trailer. Partial records
+  still expose only a complete ID; partial-field salvage is outside this pass.
+
 ## LABLOG (s05-s07) — instrument data logger
 | Field | Layout | Status |
 |---|---|---|

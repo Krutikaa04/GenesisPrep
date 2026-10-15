@@ -36,6 +36,20 @@ derived from `samples/official/`. Dates are the working-session dates.
   System Python 3.9 cannot run the existing CLI fixture's
   `TemporaryDirectory(ignore_cleanup_errors=True)`; no M3 file was changed.
 
+
+* Review/refinement pass (2026-10-16): flipping the s03 header codec flag changed
+  Alice's/Schloss text while record checksums passed. Codec-dependent fields
+  now carry uncertainty when the trailer cannot establish header integrity;
+  no alternate codec is guessed. ASCII-only records retain independent trust.
+* In-bounds bad offsets skipped checksum-valid prefix records. Repair now needs
+  a unique earlier full chain plus the stored checksum after only pointer repair.
+  A genuine fixture with two overlapping valid chains (offsets 16 and 271,
+  equal pointer byte sums) confirms that ambiguous candidates are rejected.
+* Repeated prefix sums made resynchronization quadratic. Carrying checksum state
+  makes measured checksum work linear with constant extra checksum memory.
+  Added deterministic byte-work guards and independent vendor/compound-damage
+  negative controls. A stray final END! gap now reaches the validated trailer.
+
 ### LABLOG (s05-s07)
 * H1 `start` is unix time. **Failed**: gives 1972-10-11T05:07:43Z - right month/day/time, year 20 too low.
 * H2 epoch 1990-01-01. **Confirmed**: `1992-10-11T05:07:43Z` (s05 expected).

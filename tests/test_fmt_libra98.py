@@ -1,11 +1,49 @@
 """M1 LIBRA damage matrix, semantics, and direct decoder safety."""
 import json
+import builtins
 import random
 import struct
 import unittest
+from unittest import mock
 
 from helpers import SAMPLES, check_contract
 from deadbits.formats import libra98
+from deadbits.engine import salvage_bytes
+
+
+KNOWN_RECORDS = [
+    {"id": 41, "title": "Café", "author": "Zoë", "year": 1998,
+     "price_cents": 1234, "copies": 2, "isbn": "0306406152",
+     "checked_out": True, "deleted": False, "reference_only": True, "due_date": "2000-02-29"},
+    {"id": 42, "title": "ASCII survives", "author": "Plain", "year": 1970,
+     "price_cents": 0, "copies": 0, "isbn": "123456789X",
+     "checked_out": False, "deleted": True, "reference_only": False, "due_date": None},
+]
+
+
+def record_bytes(rec, encoding="cp437"):
+    """Independent known-value fixture writer; does not call decoder helpers."""
+    title, author = rec["title"].encode(encoding), rec["author"].encode(encoding)
+    flags = int(rec["checked_out"]) | (int(rec["deleted"]) << 1) | (int(rec["reference_only"]) << 2)
+    due = 0
+    if rec["due_date"]:
+        year, month, day = map(int, rec["due_date"].split("-"))
+        due = ((year - 1980) << 9) | (month << 5) | day
+    body = (struct.pack("<BI", flags, rec["id"]) + bytes([len(title)]) + title
+            + bytes([len(author)]) + author
+            + struct.pack("<HHB", rec["year"] - 1500, rec["price_cents"], rec["copies"])
+            + rec["isbn"].encode("ascii") + struct.pack("<H", due))
+    body += bytes([sum(body) & 255])
+    return b"\xa5" + bytes([len(body)]) + body
+
+
+def known_file(records=KNOWN_RECORDS, encoding="cp437", vendor=b""):
+    created = ((1998 - 1980) << 9) | (10 << 5) | 3
+    clock = (11 << 11) | (20 << 5) | 11
+    header = b"LB98" + struct.pack("<BBHHHHH", 2, int(encoding == "cp1252"), len(records),
+                                  created, clock, 16 + len(vendor), 7)
+    data = header + vendor + b"".join(record_bytes(r, encoding) for r in records)
+    return data + b"END!" + struct.pack("<H", sum(data) & 65535)
 
 
 def file_checksum(data):
@@ -233,6 +271,189 @@ class Libra(unittest.TestCase):
             res = libra98.decode(data, 'hostile.dat')
             res.size = len(data)
             check_contract(self, res, len(data))
+
+
+class LibraIndependent(unittest.TestCase):
+    """Known-value and end-to-end regressions, independent of kit decoder output."""
+
+    def decode(self, data):
+        return check_contract(self, salvage_bytes(data, "independent.bin"), len(data))
+
+    def test_known_values_under_both_code_pages(self):
+        for encoding in ("cp437", "cp1252"):
+            with self.subTest(encoding=encoding):
+                doc = self.decode(known_file(encoding=encoding, vendor=b"LIBSYS/98"))
+                self.assertEqual(doc["format"], "LIBRA-98")
+                self.assertEqual(doc["status"], "ok")
+                self.assertEqual(doc["damage"], [])
+                self.assertEqual(doc["records"], KNOWN_RECORDS)
+                self.assertEqual(doc["metadata"], {
+                    "version": 2, "encoding": encoding, "created": "1998-10-03T11:20:22",
+                    "branch_id": 7, "declared_record_count": 2, "data_offset": 25,
+                })
+
+    def test_encoding_flag_corruption_taints_only_codec_dependent_text(self):
+        mutants = {"cp437": ("Caf‚", "Zo‰"), "cp1252": ("CafΘ", "Zoδ")}
+        for encoding, text in mutants.items():
+            with self.subTest(encoding=encoding):
+                data = bytearray(known_file(encoding=encoding))
+                data[5] ^= 1
+                doc = self.decode(bytes(data))
+                self.assertEqual(doc["status"], "partial")
+                self.assertEqual([d["kind"] for d in doc["damage"]], ["checksum_mismatch"])
+                self.assertEqual(doc["records"][0], dict(KNOWN_RECORDS[0], title=text[0], author=text[1],
+                                                        verified=False, issues=["checksum_mismatch"]))
+                self.assertEqual(doc["records"][1], KNOWN_RECORDS[1])
+
+        # The original review reproduction goes through format detection too.
+        data = bytearray((SAMPLES / "s03.dat").read_bytes())
+        data[5] ^= 1
+        records = {r["id"]: r for r in self.decode(bytes(data))["records"]}
+        self.assertEqual(records[1004]["title"], "AliceÆs Adventures in Wonderland")
+        self.assertFalse(records[1004]["verified"])
+        self.assertEqual(records[1023]["title"], "Das Schlo▀")
+        self.assertFalse(records[1023]["verified"])
+        self.assertEqual(records[1011]["title"], "Walden")
+        self.assertNotIn("verified", records[1011])
+
+    def test_unconfirmed_trailer_cannot_verify_non_ascii_text(self):
+        data = known_file()
+        bad_checksum = data[:-1] + bytes([data[-1] ^ 1])
+        for label, mutant, issue in (
+                ("trailer-only checksum flip", bad_checksum, "checksum_mismatch"),
+                ("missing trailer", data[:-6], "truncated"),
+                ("partial marker", data[:-4], "truncated"),
+                ("partial checksum", data[:-1], "truncated")):
+            with self.subTest(label=label):
+                doc = self.decode(mutant)
+                self.assertEqual(doc["status"], "partial")
+                self.assertEqual([d["kind"] for d in doc["damage"]], [issue])
+                # Even unchanged text is uncertain: the same checksum failure
+                # could have come from the header's encoding bit instead.
+                self.assertEqual(doc["records"][0], dict(KNOWN_RECORDS[0], verified=False, issues=[issue]))
+                self.assertEqual(doc["records"][1], KNOWN_RECORDS[1])
+
+    def test_ascii_text_stays_independent_of_corrupt_encoding_flag(self):
+        records = [dict(KNOWN_RECORDS[1], id=73)]
+        data = bytearray(known_file(records))
+        data[5] ^= 1
+        doc = self.decode(bytes(data))
+        self.assertEqual(doc["records"], records)
+        self.assertEqual([d["kind"] for d in doc["damage"]], ["checksum_mismatch"])
+
+    def test_in_bounds_offset_recovered_only_with_full_chain_proof(self):
+        data = known_file()
+        second = 16 + len(record_bytes(KNOWN_RECORDS[0]))
+        for offset in (17, second, second + 1, len(data) - 6, len(data)):
+            with self.subTest(offset=offset):
+                mutant = bytearray(data)
+                struct.pack_into("<H", mutant, 12, offset)
+                doc = self.decode(bytes(mutant))
+                self.assertEqual(doc["records"], [
+                    dict(KNOWN_RECORDS[0], verified=False, issues=["checksum_mismatch"]), KNOWN_RECORDS[1]])
+                self.assertEqual([d["kind"] for d in doc["damage"]], ["invalid_value", "checksum_mismatch"])
+                self.assertEqual(doc["damage"][0]["offset"], 12)
+                self.assertFalse(doc["damage"][0]["lossy"])
+                self.assertEqual(doc["metadata"]["data_offset"], offset)
+
+        # Extended headers must also survive natural pointer corruption.
+        data = known_file(vendor=b"LIBSYS/98\x00END!xx")
+        mutant = bytearray(data)
+        struct.pack_into("<H", mutant, 12, struct.unpack_from("<H", data, 12)[0] + 1)
+        doc = self.decode(bytes(mutant))
+        self.assertEqual([r["id"] for r in doc["records"]], [41, 42])
+        self.assertEqual([d["kind"] for d in doc["damage"]], ["invalid_value", "checksum_mismatch"])
+
+    def test_vendor_record_bytes_are_not_reclassified_as_data(self):
+        vendor = b"VENDOR" + record_bytes(dict(KNOWN_RECORDS[1], id=777))
+        data = known_file(vendor=vendor)
+        doc = self.decode(data)
+        self.assertEqual(doc["status"], "ok")
+        self.assertEqual(doc["records"], KNOWN_RECORDS)
+        self.assertEqual(doc["damage"], [])
+
+        # Even a trailer suggesting the vendor record's offset is insufficient:
+        # that chain has three records, contradicting the declared count of two.
+        mutant = bytearray(data)
+        declared = struct.unpack_from("<H", data, 12)[0]
+        fake_start = 22
+        stored = (sum(data[:-6]) - sum(declared.to_bytes(2, "little"))
+                  + sum(fake_start.to_bytes(2, "little"))) & 65535
+        struct.pack_into("<H", mutant, len(mutant) - 2, stored)
+        doc = self.decode(bytes(mutant))
+        self.assertEqual([r["id"] for r in doc["records"]], [41, 42])
+        self.assertEqual([d["kind"] for d in doc["damage"]], ["checksum_mismatch"])
+
+    def test_recomputed_or_compound_offset_damage_is_not_guessed(self):
+        data = bytearray(known_file())
+        struct.pack_into("<H", data, 12, 17)
+        recomputed = file_checksum(data)
+        doc = self.decode(recomputed)
+        self.assertEqual(doc["records"], [KNOWN_RECORDS[1]])
+        self.assertEqual([d["kind"] for d in doc["damage"]], ["unparsed_bytes", "count_mismatch"])
+        # A second error removes the independent evidence for the earlier start.
+        data[-1] ^= 0x80
+        doc = self.decode(bytes(data))
+        self.assertEqual(doc["records"], [KNOWN_RECORDS[1]])
+        self.assertNotIn("invalid_value", [d["kind"] for d in doc["damage"]])
+
+    def test_ambiguous_checksum_valid_offset_chains_are_not_guessed(self):
+        blank = dict(KNOWN_RECORDS[1], author="")
+        outer_first = record_bytes(dict(blank, id=5001, title="p" * 157))
+        inner_first = record_bytes(dict(blank, id=5003, title="a" * 53))
+        inner_last = record_bytes(dict(blank, id=5004, title="b" * 79))
+        # Two real, overlapping chains: [16, 200] and [271, 351]. Both have
+        # two checksum-valid records ending at 457. Offsets 16 and 271 have
+        # equal byte sums, so the file checksum cannot distinguish them.
+        title = b"q" * 63 + inner_first + inner_last[:87]
+        self.assertEqual(len(title), 230)
+        body = bytearray(struct.pack("<BI", 0, 5002) + b"\xe6" + title + inner_last[87:])
+        body[6] = (body[-1] - sum(body[:-1]) + body[6]) & 255
+        outer_last = b"\xa5\xff" + body
+        header = bytearray(known_file()[:16])
+        struct.pack_into("<H", header, 12, 300)
+        payload = bytes(header) + outer_first + outer_last
+        self.assertEqual(len(payload), 457)
+        stored = (sum(payload) - sum(header[12:14]) + 16) & 65535
+        data = payload + b"END!" + struct.pack("<H", stored)
+        self.assertTrue(libra98._valid_chain(data, 16, 457, 2, "cp437"))
+        self.assertTrue(libra98._valid_chain(data, 271, 457, 2, "cp437"))
+        self.assertIsNone(libra98._recover_data_offset(data, 300, 2, "cp437"))
+        doc = self.decode(data)
+        self.assertEqual(doc["records"], [dict(blank, id=5004, title="b" * 79)])
+        self.assertNotIn("invalid_value", [d["kind"] for d in doc["damage"]])
+
+    def test_stray_end_before_verified_final_trailer_reports_only_gap(self):
+        for garbage in (b"END!xx", b"END!xxEND!yy", b"END!xxjunkEND!zz"):
+            with self.subTest(garbage=garbage):
+                data = known_file()
+                mutant = file_checksum(data[:-6] + garbage + data[-6:])
+                doc = self.decode(mutant)
+                self.assertEqual(doc["records"], KNOWN_RECORDS)
+                self.assertEqual(doc["status"], "partial")
+                self.assertEqual([d["kind"] for d in doc["damage"]], ["unparsed_bytes"])
+                self.assertEqual(doc["damage"][0]["offset"], len(data) - 6)
+                self.assertIn(str(len(garbage)), doc["damage"][0]["detail"])
+
+    def test_repeated_damage_has_linear_checksum_work(self):
+        for count in (64, 512, 4096):
+            records = [dict(KNOWN_RECORDS[1], id=i) for i in range(count)]
+            valid = known_file(records)
+            damaged = valid[:16] + b"".join(b"\xa5\x00" + record_bytes(r) for r in records) + valid[-6:]
+            damaged = file_checksum(damaged)
+            measured = [0]
+
+            def counted_sum(values, *args, **kwargs):
+                measured[0] += len(values)
+                return builtins.sum(values, *args, **kwargs)
+
+            with self.subTest(count=count), mock.patch.object(libra98, "sum", counted_sum, create=True):
+                doc = self.decode(damaged)
+                self.assertEqual(doc["records"], records)
+                self.assertEqual([d["kind"] for d in doc["damage"]], ["bad_length"] * count)
+                # Count bytes processed by checksum sums, independent of CPU
+                # speed. Re-summing each previous prefix exceeds this bound.
+                self.assertLessEqual(measured[0], 12 * len(damaged))
 
 
 if __name__ == '__main__':
