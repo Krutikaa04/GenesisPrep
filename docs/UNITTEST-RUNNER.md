@@ -3,7 +3,20 @@
 Issue #11 owns `deadbits/validation/unittests.py`, its synthetic-suite tests,
 and this document. It uses the schema and runner/presenter boundary from #9.
 No shared recovery CLI, decoder, schema, fixture, or recovery JSON changes are
-needed. CLI integration remains with #13.
+needed. The shared CLI integration from #13 delegates directly to this service:
+
+```console
+salvage --test --source-dir "/path/to/source kit" --evidence-dir /tmp/test-proof
+salvage --test --evidence-file /tmp/test-proof/validation.json --verbose
+```
+
+The adapter `run(ValidationRequest)` selects `source_dir/tests/`. The shared
+CLI requires a fresh output directory outside source/kit/corpus trees and adds
+its `validation.json` envelope alongside the service's three artifacts. Shared
+CLI exits are 0 complete, 1 failed/error, 2 usage and 3 unavailable; the standalone
+entry point below retains its documented exit codes. `--verbose` on the shared
+CLI shows provenance and artifact hashes; the detailed log is linked on every
+run. Loading saved evidence displays historical results and does not rerun tests.
 
 Run explicitly selected, trusted local Python test sources:
 

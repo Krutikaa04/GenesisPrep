@@ -55,13 +55,23 @@ commands and are never shell-expanded.
 
 ## Integration boundary for issues #10, #11 and #12
 
-The reference runner (#10) now implements this boundary; see
-[reference-runner usage and artifacts](REFERENCE-RUNNER.md). Other runner
-implementations/integration remain separate work. Until installed with this
-boundary, live modes return 3 and name their missing prerequisite;
-no output directories are created and no passing measurements are fabricated.
-Existing source tools remain available meanwhile:
-`python tools/compare_expected.py`, unittest discovery and `tools/evaluate.py`.
+All three services now implement this boundary: [references](REFERENCE-RUNNER.md),
+[source tests](UNITTEST-RUNNER.md) and [benchmarks](BENCHMARK-RUNNER.md).
+`--test --source-dir PATH` selects `PATH/tests/` and delegates discovery,
+subprocess isolation and all outcome accounting to the existing test service.
+The CLI saves `validation.json` alongside `evidence.json`, `summary.json` and
+`tests.log`; both envelopes describe the same run. Concise output shows outcome
+counts and artifact links; `--verbose` adds recorded environment, version and
+hashes. Full test output/tracebacks remain in the linked log.
+
+Source checkouts can infer their local resources. Portable/installed applications
+need explicit external paths; missing source suites return 3 with `--source-dir`
+guidance. Empty, skipped-only or import-broken suites never appear passing.
+Doctor checks the presence of `tools/evaluate.py` and `tools/make_variants.py`
+for benchmarks, without importing those external files or running tests. Its
+checks establish presence, not scorer compatibility or test/reference success.
+If a runner module itself is absent, modes report unavailable without creating
+output. Existing standalone/source tools keep their documented entry points.
 
 Runner authors expose `run(request) -> ValidationEvidence` in:
 
@@ -79,9 +89,8 @@ schema #9. Modules are imported from the installed application, never from the
 user-supplied source path. A selected source suite is trusted local code; #11
 owns safe subprocess execution and detailed outcome accounting.
 
-This is the proposed CLI adapter boundary for runner PRs to implement/review;
-#13 does not claim the other contributors have agreed to it. They retain their
-isolated new modules. The CLI owns parsing, fresh destination protection,
+The services retain their isolated modules and existing measurement semantics.
+The CLI owns parsing, fresh destination protection,
 envelope persistence, presentation and exit status. Runners own resource/content
 validation, collection and detailed artifact persistence, following
 [the evidence schema](VALIDATION-EVIDENCE.md). Missing inputs produce unavailable

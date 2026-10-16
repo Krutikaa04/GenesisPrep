@@ -62,9 +62,15 @@ reference snapshots, detailed differences and a provenance envelope. Supply
 `--kit-dir` for external fixtures and a new `--evidence-dir` outside protected
 inputs; see [reference runner](docs/REFERENCE-RUNNER.md).
 
-`--test` and `--benchmark` runner integration remains separately tracked. Missing
-live runners explicitly return unavailable (exit 3). All validation modes can
-present saved schema-1 evidence using `--evidence-file`, labelled historical.
+`--test --source-dir "/path/to/source kit" --evidence-dir /tmp/test-proof`
+executes the selected trusted kit's `tests/` suite and saves dynamic outcomes
+and detailed logs. `--benchmark` measures mutations using explicit baseline
+labels and compatible scoring tools from `--source-dir`. See the
+[test service](docs/UNITTEST-RUNNER.md) and [benchmark service](docs/BENCHMARK-RUNNER.md).
+All three services are connected to the CLI. Missing validation resources return
+unavailable (exit 3); installed applications need an external kit for tests and
+benchmark scoring. All validation modes can present saved schema-1 evidence
+using `--evidence-file`, labelled historical.
 Validation exits are distinct from recovery's always-zero behavior. See
 [CLI modes and runner integration](docs/CLI-MODES.md) for paths, examples,
 exit codes and evidence protection.

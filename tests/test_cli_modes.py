@@ -93,6 +93,9 @@ class Modes(unittest.TestCase):
                                  ('expected_outputs', 'sample.json')]:
                 (root / folder).mkdir()
                 (root / folder / name).write_text('fixture')
+            (root / 'tools').mkdir()
+            for name in ('evaluate.py', 'make_variants.py'):
+                (root / 'tools' / name).write_text('# presence fixture')
             with mock.patch.object(diagnostics.importlib, 'import_module',
                                    return_value=types.SimpleNamespace(run=lambda request: None)):
                 self.assertEqual(invoke(['--doctor', '--source-dir', str(root), '--kit-dir', str(root)])[0], 0)
@@ -255,3 +258,167 @@ class Modes(unittest.TestCase):
             self.assertIn('Format adapters', result.stdout)
             self.assertIn('Missing or empty', result.stdout)
             self.assertNotIn('\x1b', result.stdout)
+
+
+class LiveServiceIntegration(unittest.TestCase):
+    """Exercise the shared CLI against real runners and tiny trusted local kits."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name).resolve()
+        self.source = self.root / 'source kit é & literal $name'
+        self.tests = self.source / 'tests'
+        self.tests.mkdir(parents=True)
+
+    def suite(self, code):
+        (self.tests / 'test_selected.py').write_text(code, encoding='utf-8')
+
+    def run_suite(self, name='proof', verbose=False, source=None):
+        output = self.root / name
+        args = ['--test', '--source-dir', str(source or self.source), '--evidence-dir', str(output)]
+        if verbose:
+            args.append('--verbose')
+        code, text, err = invoke(args)
+        evidence = json.loads((output / 'validation.json').read_text(encoding='utf-8'))
+        return code, text, err, output, ValidationEvidence.from_dict(evidence)
+
+    def test_passing_selected_suite_preserves_counts_artifacts_and_verbose_provenance(self):
+        self.suite('''import unittest
+class Selected(unittest.TestCase):
+    def test_ok(self): print('detail marker é')
+    @unittest.skip('intentional skip')
+    def test_skip(self): pass
+    @unittest.expectedFailure
+    def test_expected(self): self.fail('expected failure')
+''')
+        for verbose in (False, True):
+            code, text, err, output, evidence = self.run_suite('verbose' if verbose else 'concise', verbose)
+            self.assertEqual(code, 0, err)
+            self.assertEqual(evidence.status, 'complete')
+            item = evidence.tests
+            self.assertEqual((item.passed, item.skipped, item.expected_failures, item.total), (1, 1, 1, 3))
+            self.assertEqual(item.context.provenance, 'live')
+            self.assertIn('Tests: passed', text)
+            self.assertNotIn('%', text)
+            self.assertNotIn('\x1b', text)
+            self.assertIn(str(output / 'tests.log'), text)
+            self.assertNotIn('detail marker', text)  # Full test output is saved in the linked log.
+            self.assertEqual('Version:' in text, verbose)
+            self.assertIn('detail marker é', (output / 'tests.log').read_text(encoding='utf-8'))
+            self.assertEqual(json.loads((output / 'evidence.json').read_text()), evidence.to_dict())
+            summary = json.loads((output / 'summary.json').read_text())
+            self.assertEqual((summary['discovered'], summary['run']), (3, 3))
+
+    def test_failed_error_and_unexpected_success_counts_survive_historical_display(self):
+        self.suite('''import unittest
+class Selected(unittest.TestCase):
+    def test_fail(self): self.fail('intentional assertion')
+    def test_error(self): raise RuntimeError('intentional exception')
+    @unittest.expectedFailure
+    def test_unexpected(self): pass
+''')
+        code, text, err, output, evidence = self.run_suite()
+        self.assertEqual(code, 1, err)
+        self.assertEqual((evidence.tests.failed, evidence.tests.errors, evidence.tests.unexpected_successes), (1, 1, 1))
+        self.assertIn('Tests: failed', text)
+        before = (output / 'validation.json').read_bytes()
+        code, saved, err = invoke(['--test', '--evidence-file', str(output / 'validation.json'), '--verbose'])
+        self.assertEqual(code, 1, err)
+        self.assertIn('historical', saved)
+        self.assertEqual((output / 'validation.json').read_bytes(), before)
+        self.assertIn('intentional assertion', (output / 'tests.log').read_text())
+
+    def test_empty_skipped_import_error_and_missing_suites_are_unavailable(self):
+        scenarios = [('empty', None), ('skip', "import unittest\n@unittest.skip('skip')\nclass C(unittest.TestCase):\n def test_skip(self): pass\n"),
+                     ('import', "raise RuntimeError('cannot import selected suite')\n"), ('missing', None)]
+        for name, source in scenarios:
+            with self.subTest(name=name):
+                if source is not None:
+                    self.suite(source)
+                code, text, err, output, evidence = self.run_suite(name,
+                    source=self.root / 'missing source' if name == 'missing' else self.source)
+                self.assertEqual(code, 3, err)
+                self.assertEqual(evidence.status, 'unavailable')
+                self.assertNotIn('Tests: passed', text)
+                if name == 'missing':
+                    self.assertIn('--source-dir', text)
+                self.assertTrue((output / 'tests.log').is_file())
+
+    def test_test_mode_refuses_existing_recovery_output_and_source_descendants(self):
+        self.suite('raise RuntimeError("must not execute")\n')
+        output = self.root / 'recovery output'
+        output.mkdir()
+        report = output / 'report.json'
+        report.write_text('original recovery report')
+        for destination in (output, self.source / 'proof', self.tests / 'proof'):
+            code, text, err = invoke(['--test', '--source-dir', str(self.source), '--evidence-dir', str(destination)])
+            self.assertEqual(code, 1)
+            self.assertNotIn('must not execute', err)
+        self.assertEqual(report.read_text(), 'original recovery report')
+        self.assertFalse((self.source / 'proof').exists())
+        self.assertFalse((self.tests / 'proof').exists())
+
+    def test_doctor_finds_real_runners_without_executing_tests_and_checks_scorers(self):
+        from deadbits.validation import unittests
+        self.suite('raise RuntimeError("doctor must not execute tests")\n')
+        with mock.patch.object(unittests, 'run_tests', side_effect=AssertionError('executed')) as runner:
+            # Source tests can run against a portable app; select their external kit explicitly.
+            code, text, err = invoke(['--doctor', '--source-dir', str(ROOT),
+                                     '--kit-dir', str(ROOT / 'samples/official')])
+            self.assertEqual(code, 0, err)
+            self.assertIn('test runner', text)
+            self.assertIn('benchmark scoring tools', text)
+            code, text, err = invoke(['--doctor', '--source-dir', str(self.source),
+                                     '--kit-dir', str(ROOT / 'samples/official')])
+            self.assertEqual(code, 3, err)
+            self.assertIn('Missing evaluate.py/make_variants.py', text)
+            runner.assert_not_called()
+
+    def test_reference_and_benchmark_modes_use_real_services_and_separate_evidence(self):
+        samples, expected = self.root / 'samples', self.root / 'expected'
+        samples.mkdir()
+        expected.mkdir()
+        (samples / 'unknown.dat').write_bytes(b'unknown binary content\0')
+        (expected / 'answer.json').write_text(json.dumps(dict(file='unknown.dat', format='UNKNOWN',
+                                                              status='unrecognized', records=[])))
+        for mode in ('verify', 'benchmark'):
+            output = self.root / mode
+            code, text, err = invoke(['--' + mode, '--source-dir', str(ROOT), '--samples-dir', str(samples),
+                                     '--expected-dir', str(expected), '--evidence-dir', str(output)])
+            self.assertEqual(code, 0, err)
+            evidence = ValidationEvidence.from_dict(json.loads((output / 'validation.json').read_text()))
+            self.assertIsNone(evidence.tests)
+            self.assertNotIn('\x1b', text)
+            if mode == 'verify':
+                self.assertEqual((evidence.reference.matched, evidence.reference.total), (1, 1))
+                self.assertEqual(evidence.benchmarks, ())
+            else:
+                self.assertIsNone(evidence.reference)
+                self.assertTrue(evidence.benchmarks)
+                # A supplied organizer answer remains independent truth, even with zero records.
+                self.assertIn('organizer_reference', text)
+                self.assertTrue(all(row.measurements['recovery'].value is None for row in evidence.benchmarks))
+
+    def test_portable_test_mode_uses_explicit_external_kit_and_reports_missing_sources(self):
+        import zipfile
+        self.suite('import unittest\nclass C(unittest.TestCase):\n def test_ok(self): pass\n')
+        app = self.root / 'salvage.pyz'
+        with zipfile.ZipFile(app, 'w') as archive:
+            archive.writestr('__main__.py', 'from deadbits.cli import main\nraise SystemExit(main())\n')
+            for path in (ROOT / 'deadbits').rglob('*.py'):
+                archive.write(path, path.relative_to(ROOT).as_posix())
+        for name, selection, expected in [('missing', [], 3), ('selected', ['--source-dir', str(self.source)], 0)]:
+            output = self.root / ('portable ' + name)
+            result = subprocess.run([sys.executable, str(app), '--test', *selection,
+                                     '--evidence-dir', str(output)], cwd=self.root,
+                                    capture_output=True, text=True, encoding='utf-8', timeout=30)
+            self.assertEqual(result.returncode, expected, result.stderr)
+            self.assertNotIn('\x1b', result.stdout)
+            evidence = ValidationEvidence.from_dict(json.loads((output / 'validation.json').read_text()))
+            if name == 'missing':
+                self.assertIn('--source-dir', result.stdout)
+                self.assertIsNone(evidence.tests.total)
+            else:
+                self.assertEqual((evidence.tests.passed, evidence.tests.total), (1, 1))
+                self.assertIn(str(output / 'tests.log'), result.stdout)

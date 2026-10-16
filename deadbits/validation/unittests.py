@@ -33,7 +33,8 @@ _OUTCOMES = ("passed", "failed", "errors", "skipped", "expected_failures",
 _PRIORITY = dict(zip(_OUTCOMES, (0, 4, 5, 2, 1, 3)))
 _SOURCE_HELP = ("Source tests are unavailable. Portable installations do not "
                 "include the source suite. Supply --source-kit PATH to an "
-                "extracted source checkout, or --tests-dir PATH explicitly.")
+                "extracted source checkout, or --tests-dir PATH explicitly. "
+                "For salvage --test, use --source-dir PATH containing tests/.")
 
 
 class _AccountingResult(unittest.TextTestResult):
@@ -228,6 +229,18 @@ def run_tests(*, output_dir, tests_dir=None, source_kit=None, pattern="test_*.py
         artifacts=artifacts, **(summary["counts"] or {})))
     _write_json(destination / "evidence.json", evidence.to_dict())
     return evidence
+
+
+def run(request):
+    """Shared CLI adapter; diagnostics owns fresh destinations and path guards.
+
+    Delegate discovery, process isolation, recursion guards, outcome accounting
+    and detailed artifacts to the existing service. Installed apps need an
+    explicit source kit; missing selection remains unavailable.
+    """
+    if request.evidence_dir is None:
+        raise ValueError("test validation requires an evidence directory")
+    return run_tests(output_dir=request.evidence_dir, source_kit=request.source_dir)
 
 
 def main(argv=None):

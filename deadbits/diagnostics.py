@@ -48,9 +48,14 @@ def resources(request):
         available = path is not None and path.is_dir() and any(path.glob(pattern))
         return Resource(name, available, str(path) if available else
                         'Missing or empty; supply the explicit local path. No download is attempted.')
+    tools = request.source_dir / 'tools' if request.source_dir else None
+    scorer_ready = tools is not None and all((tools / name).is_file()
+                                             for name in ('evaluate.py', 'make_variants.py'))
     return (directory('source tests', request.source_dir / 'tests' if request.source_dir else None, 'test_*.py'),
             directory('samples', request.samples_dir, '*'),
-            directory('organizer references', request.expected_dir, '*.json'))
+            directory('organizer references', request.expected_dir, '*.json'),
+            Resource('benchmark scoring tools', scorer_ready, str(tools) if scorer_ready else
+                     'Missing evaluate.py/make_variants.py; supply --source-dir PATH to a trusted source kit.'))
 
 
 def doctor(request):
