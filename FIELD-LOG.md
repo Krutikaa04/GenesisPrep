@@ -429,3 +429,27 @@ derived from `samples/official/`. Dates are the working-session dates.
   a regression for usable absolute paths to actual/comparison artifacts.
 * Final live-path regression brings discovery to 452 tests (one platform skip),
   all other tests pass without environment workarounds; references remain 7/7.
+
+## 2026-10-16 — M3 issue #13 service integration completion
+
+* Started codex/issue-13-integration from merged master ff99ba0. Added the
+  missing run(request) test-service adapter; it delegates to #11's existing
+  run_tests without duplicating discovery, isolation, recursion guards or
+  outcome accounting. Shared CLI persistence/exit behavior and recovery JSON
+  stay unchanged. Missing-source guidance now names --source-dir for the CLI.
+* Doctor discovers all real runner adapters and also checks benchmark scoring
+  file presence. It does not execute tests or import external scorer files.
+* Added real-service CLI regressions for passing/skipped/expected-failure
+  counts, failures/errors/unexpected successes, missing/empty/import-broken
+  suites, historical presentation, artifact paths, protected output and
+  portable execution with Unicode/space paths. Tiny suites avoid recursive
+  execution of the project suite. Reference and benchmark modes are also
+  exercised through the shared CLI with separate evidence sections.
+* A new benchmark smoke-test expectation initially labelled a supplied
+  UNKNOWN organizer answer no_record_baseline. Corrected it to the actual
+  organizer_reference baseline; zero record denominators remain unavailable.
+  No production scoring rules or existing assertions were relaxed.
+* Python 3.12 validation: 24 focused CLI tests and all 473 discovered tests
+  pass (one platform filesystem skip); organizer comparisons remain 7/7.
+  Real checkout doctor exits 0 with all ten adapters, three services, kit and
+  scorer resources present. No decoder or official fixture changes.
