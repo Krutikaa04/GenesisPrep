@@ -45,6 +45,7 @@ class Modes(unittest.TestCase):
     def test_usage_exit_codes(self):
         for args, expected in [([], 0), (['one'], 0), (['--wat'], 0),
                 (['--verify', '--test'], 2), (['--test', '--wat'], 2),
+                (['--verify=true'], 2), (['--doctor=false'], 2),
                 (['--doctor', 'input', 'output'], 2),
                 (['--doctor', '--evidence-dir', 'output'], 2),
                 (['--verify', '--evidence-file', 'saved', '--kit-dir', 'kit'], 2),

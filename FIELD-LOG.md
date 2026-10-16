@@ -377,3 +377,6 @@ derived from `samples/official/`. Dates are the working-session dates.
   assumption: its temporary root uses an 8.3 alias while the CLI resolves the
   saved evidence path. Corrected the artifact-path assertion to use the resolved
   evidence parent, preserving the intended relative-path check and behavior.
+* Final usage review added malformed boolean-mode assignments (for example,
+  --verify=true) to diagnostic usage-error handling: exit 2 rather than legacy
+  recovery's exit 0. Existing recovery usage semantics are retained.

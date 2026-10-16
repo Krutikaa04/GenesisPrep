@@ -127,7 +127,7 @@ def main(argv=None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     parser = _parser()
     # Recovery retains its historical zero exit even on usage/operational failure.
-    validation_requested = any(arg in {"--doctor", "--verify", "--test", "--benchmark"}
+    validation_requested = any(arg.split("=", 1)[0] in {"--doctor", "--verify", "--test", "--benchmark"}
                                for arg in argv[:argv.index("--") if "--" in argv else len(argv)])
     try:
         args = parser.parse_args(argv)
