@@ -1,4 +1,5 @@
 """Small deterministic fixture for the mentor walkthrough and stream behavior."""
+import contextlib
 import hashlib
 import io
 import json
@@ -7,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import zipfile
 from unittest.mock import patch
 
 from deadbits import diagnostics
@@ -167,9 +169,16 @@ class MentorDemo(unittest.TestCase):
         self.assertIn("Input ended", tty.getvalue())
 
     def test_existing_output_and_input_roots_are_protected(self):
-        for target in (self.kit, self.kit / "nested", self.source / "nested", self.root, ROOT / "demo-proof"):
+        for target in (self.kit, self.kit / "nested", self.source / "nested", self.root):
             with self.subTest(target=target), self.assertRaises(ValueError):
                 self.demo(output_dir=target)
+        # Tests can run against an installed app; identify the external checkout
+        # explicitly instead of assuming it is the application's import root.
+        target = ROOT / "demo-proof"
+        existed = target.exists()
+        with self.assertRaises(ValueError):
+            self.demo(output_dir=target, source_dir=ROOT)
+        self.assertEqual(target.exists(), existed)
         self.output.mkdir()
         marker = self.output / "marker"
         marker.write_text("preserve")
@@ -199,6 +208,109 @@ class MentorDemo(unittest.TestCase):
                                  text=True, encoding="utf-8", timeout=10)
         self.assertEqual(invalid.returncode, 2)
         self.assertIn("both historical and skipped", invalid.stderr)
+
+
+    @staticmethod
+    def shared_cli(argv):
+        from deadbits.cli import main
+        output, errors = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
+            code = main(argv)
+        return code, output.getvalue(), errors.getvalue()
+
+    def demo_args(self, output=None):
+        return ["--demo", "--kit-dir", str(self.kit), "--source-dir", str(self.source),
+                "--output-dir", str(output or self.output)]
+
+    def test_shared_cli_delegates_live_guided_and_existing_output_status(self):
+        before = self.snapshot(self.kit), self.snapshot(self.source)
+        code, text, err = self.shared_cli(self.demo_args() + ["--guided"])
+        self.assertEqual(code, 0, err)
+        self.assertIn("Demo: complete", text)
+        self.assertIn("Guided prompts skipped", text)
+        self.assertNotIn("Press Enter", text)
+        self.assertNotIn("\x1b", text)
+        self.assertEqual(before, (self.snapshot(self.kit), self.snapshot(self.source)))
+        manifest = json.loads((self.output / "demo.json").read_text())
+        self.assertTrue(all(row["status"] == "complete" for row in manifest["validation"]))
+        test_proof = self.output / "validation/test"
+        self.assertEqual(json.loads((test_proof / "validation.json").read_text()),
+                         json.loads((test_proof / "evidence.json").read_text()))
+        self.assertEqual(self.shared_cli(self.demo_args())[0], 1)
+
+    def test_shared_cli_usage_help_and_mode_conflicts_never_write(self):
+        invalid = [["--demo"], ["--demo=true"], self.demo_args() + ["--unknown"],
+                   self.demo_args() + ["--evidence-dir", "wrong-option"],
+                   self.demo_args() + ["--historical-evidence", "invalid"],
+                   self.demo_args() + ["--historical-evidence", "test=old", "--skip-validation", "test"]]
+        invalid += [self.demo_args() + [flag] for flag in
+                    ("--doctor", "--verify", "--test", "--benchmark", "--version", "--demo")]
+        for args in invalid:
+            with self.subTest(args=args):
+                self.assertEqual(self.shared_cli(args)[0], 2)
+                self.assertFalse(self.output.exists())
+        for args in (["--help"], ["--demo", "--help"]):
+            code, text, err = self.shared_cli(args)
+            self.assertEqual(code, 0, err)
+            self.assertIn("--demo", text)
+        self.assertIn("--historical-evidence", self.shared_cli(["--demo", "--help"])[1])
+
+    def test_shared_cli_preserves_historical_failures_and_skipped_steps(self):
+        history = self.root / "old proof.json"
+        evidence = ValidationEvidence(tests=TestEvidence(
+            context=Context(app_version="historical-app", provenance="live"),
+            passed=0, failed=1, errors=0, skipped=0, expected_failures=0, unexpected_successes=0))
+        history.write_text(json.dumps(evidence.to_dict()))
+        before = history.read_bytes()
+        args = self.demo_args() + ["--historical-evidence", "test=" + str(history),
+                                  "--skip-validation", "verify", "--skip-validation", "benchmark"]
+        code, text, err = self.shared_cli(args)
+        self.assertEqual(code, 1, err)
+        self.assertIn("historical", text)
+        self.assertEqual(history.read_bytes(), before)
+        manifest = json.loads((self.output / "demo.json").read_text())
+        self.assertEqual([row["status"] for row in manifest["validation"]], ["skipped", "failed", "skipped"])
+        args = self.demo_args(self.root / "skipped proof")
+        for mode in ("verify", "test", "benchmark"):
+            args += ["--skip-validation", mode]
+        self.assertEqual(self.shared_cli(args)[0], 3)
+
+    def test_portable_app_executes_external_source_protection_assertion(self):
+        # Copy only support modules and select one source assertion. This avoids
+        # recursive full-suite execution and confines any regression to temp data.
+        external = self.root / "external source é"
+        tests, tools = external / "tests", external / "tools"
+        tests.mkdir(parents=True)
+        tools.mkdir()
+        for name in ("evaluate.py", "make_variants.py"):
+            (tools / name).write_bytes((ROOT / "tools" / name).read_bytes())
+        (tests / "helpers.py").write_bytes((ROOT / "tests/helpers.py").read_bytes())
+        (tests / "support_libra.py").write_bytes((ROOT / "tests/test_fmt_libra98.py").read_bytes())
+        cases = (ROOT / "tests/test_demo.py").read_text(encoding="utf-8")
+        (tests / "mentor_cases.py").write_text(cases.replace("from test_fmt_libra98 import", "from support_libra import"),
+                                               encoding="utf-8")
+        (tests / "test_portable_guard.py").write_text(
+            "import unittest\nimport deadbits.demo\nfrom mentor_cases import MentorDemo\n"
+            "class Runtime(unittest.TestCase):\n"
+            " def test_zip_runtime(self): self.assertIn('.pyz', deadbits.demo.__file__)\n"
+            "def load_tests(loader, tests, pattern):\n"
+            " return unittest.TestSuite([Runtime('test_zip_runtime'), MentorDemo("
+            "'test_existing_output_and_input_roots_are_protected')])\n", encoding="utf-8")
+        app = self.root / "salvage.pyz"
+        with zipfile.ZipFile(app, "w") as archive:
+            archive.writestr("__main__.py", "from deadbits.cli import main\nraise SystemExit(main())\n")
+            for path in (ROOT / "deadbits").rglob("*.py"):
+                archive.write(path, path.relative_to(ROOT).as_posix())
+        before = self.snapshot(external)
+        proof = self.root / "portable guard proof"
+        result = subprocess.run([sys.executable, str(app), "--test", "--source-dir", str(external),
+                                 "--evidence-dir", str(proof)], cwd=self.root, stdin=subprocess.DEVNULL,
+                                capture_output=True, text=True, encoding="utf-8", timeout=45)
+        self.assertEqual(result.returncode, 0, result.stderr + (proof / "tests.log").read_text(encoding="utf-8"))
+        evidence = json.loads((proof / "validation.json").read_text())["tests"]
+        self.assertEqual((evidence["passed"], evidence["total"]), (2, 2))
+        self.assertEqual(before, self.snapshot(external))
+        self.assertFalse((external / "demo-proof").exists())
 
 
 if __name__ == "__main__":

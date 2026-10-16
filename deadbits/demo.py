@@ -1,7 +1,7 @@
 """Guided, offline mentor walkthrough using real recovery and validation outputs.
 
-Run with ``python -m deadbits.demo --kit-dir KIT --output-dir NEW_DIR``.
-The shared CLI parser remains with M3; main(argv) is its proposed --demo target.
+Run with ``salvage --demo --kit-dir KIT --output-dir NEW_DIR`` or the
+standalone module. Both entry points use this parser and orchestration.
 """
 import argparse
 import contextlib
@@ -222,12 +222,6 @@ def run_demo(*, kit_dir, output_dir, source_dir=None, historical=None,
                 path = output / "validation" / mode / "validation.json"
                 if mode in ("test", "benchmark") and source is None:
                     evidence = diagnostics.unavailable(mode, "Supply --source-dir with a trusted source kit for this live step.")
-                elif mode == "test":
-                    # #11 exposes run_tests; the shared dispatcher's run(request)
-                    # bridge is not present in this baseline. Reuse its public
-                    # service without changing another contributor's module.
-                    from .validation.unittests import run_tests
-                    evidence = run_tests(source_kit=source, output_dir=path.parent)
                 else:
                     request = diagnostics.ValidationRequest(source_dir=source, samples_dir=kit / "samples",
                         expected_dir=kit / "expected_outputs", evidence_dir=path.parent)
@@ -257,8 +251,8 @@ def run_demo(*, kit_dir, output_dir, source_dir=None, historical=None,
     return manifest
 
 
-def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__)
+def main(argv=None, *, prog=None):
+    parser = argparse.ArgumentParser(prog=prog, description=__doc__, allow_abbrev=False)
     parser.add_argument("--kit-dir", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True, help="fresh output directory outside kit/source")
     parser.add_argument("--source-dir", type=Path, help="trusted source kit for live tests and benchmark scoring")
