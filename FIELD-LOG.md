@@ -453,3 +453,10 @@ derived from `samples/official/`. Dates are the working-session dates.
   pass (one platform filesystem skip); organizer comparisons remain 7/7.
   Real checkout doctor exits 0 with all ten adapters, three services, kit and
   scorer resources present. No decoder or official fixture changes.
+* Canonical portable --test surfaced two source-suite assumptions: bare doctor
+  intentionally cannot infer an external kit, and the reference protection
+  fixture must explicitly name its external source kit. Both tests now supply
+  ROOT/source_dir while preserving their availability/protection assertions.
+  The first failed protection check created a new-proof directory under the
+  local official kit; removed exactly its six generated artifacts and empty
+  directories, restoring the fixture tree. No tracked official bytes changed.

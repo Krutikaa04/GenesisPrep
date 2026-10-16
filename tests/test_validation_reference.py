@@ -137,7 +137,9 @@ class ReferenceRunner(unittest.TestCase):
         for path in (self.samples, self.samples/'proof', self.expected, self.expected/'proof',
                      self.root, OFFICIAL, OFFICIAL/'new-proof'):
             with self.subTest(path=path), self.assertRaises(ValueError):
-                reference.run_references(samples_dir=self.samples, expected_dir=self.expected, output_dir=path)
+                # The measured source kit can be external to the running portable application.
+                reference.run_references(samples_dir=self.samples, expected_dir=self.expected,
+                                          output_dir=path, source_dir=ROOT)
         self.output.mkdir()
         report = self.output/'report.json'
         report.write_text('existing recovery report')

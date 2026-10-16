@@ -363,7 +363,9 @@ class Selected(unittest.TestCase):
         from deadbits.validation import unittests
         self.suite('raise RuntimeError("doctor must not execute tests")\n')
         with mock.patch.object(unittests, 'run_tests', side_effect=AssertionError('executed')) as runner:
-            code, text, err = invoke(['--doctor'])
+            # Source tests can run against a portable app; select their external kit explicitly.
+            code, text, err = invoke(['--doctor', '--source-dir', str(ROOT),
+                                     '--kit-dir', str(ROOT / 'samples/official')])
             self.assertEqual(code, 0, err)
             self.assertIn('test runner', text)
             self.assertIn('benchmark scoring tools', text)
