@@ -244,6 +244,29 @@ derived from `samples/official/`. Dates are the working-session dates.
   document decoders now bound records (100,000) and text (8MiB), with explicit
   loss reports. Operation-count tests verify parsing stops at the budget and
   skips intact large functions without scanning payload characters.
+* Issue #15 (supersedes the historical text-only recovery experiment below):
+  CR paragraph count is not BRAVO identification evidence. At baseline 4befda0,
+  `tools/evaluate_bravo.py` measured 20 false BRAVO identifications among 32
+  independently constructed ordinary memos, tables and logs, including DOS EOF
+  and short-control suffixes. Removed the 0.55 heuristic; the same controls now
+  yield 32 UNKNOWN and zero false BRAVO identifications. The current reproducible
+  ledger is reports/bravo-identification.json. No general false-positive rate is
+  inferred from this small, purpose-built corpus.
+* Direct BRAVO library recovery previously silently verified complete paragraphs
+  even when identity was unproved. It now applies the detector's checks and
+  marks every paragraph unverified on failure, using existing contract issues
+  and damage kinds. No shared engine/CLI interface change or force mode needed.
+  A constructed lost-CR fixture verifies that clean earlier paragraphs survive
+  while subsequent paragraph indices remain explicitly uncertain.
+* Measured tradeoff with tools/evaluate.py: BRAVO regression recovery 41/60 ->
+  27/60 keys, complete records 34/60 -> 21/60, coverage 9/12 -> 6/12, zero false
+  verified records and zero crashes in both runs. The three newly rejected
+  fragments lack sufficient marker/trailer evidence. All four midpoint-flip /
+  zero-block cases retain recovery. These are decoder-derived regression
+  baselines, not independent paragraph truth. Seven organizer references remain
+  unchanged. Trailer cuts leaving sufficient evidence can still report ok;
+  trailer completeness, formatting runs, and plausible ASCII corruption remain
+  unproved. The earlier log records the experiment and its rejected tradeoff.
 
 ### Hardening findings (mutation suite over all 30 samples)
 * Flipping the LIBRA header encoding flag re-decodes text under another code page while record checksums

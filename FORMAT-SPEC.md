@@ -362,17 +362,32 @@ textual/NUL-only trailers, short prefixes and multiple delimiters are rejected.
 paragraph bytes must still be text bytes (printable ASCII, CR, LF, TAB) for recognition (confidence 0.6, below clean
 text at 0.8). Bytes outside the text set become U+FFFD + `invalid_value`; because a damaged byte may have been a CR
 delimiter, every paragraph after the first damaged one is `verified:false` (`invalid_value`, one lossless damage entry
-says numbering is uncertain). **Truncated files (assumption, confidence 0.55):** with no marker, or a marker followed by fewer than 4 trailer bytes
-(all control bytes), a file is recognised when it is < 64 KiB, has >= 32 text bytes of printable ASCII/TAB/CR only (no
-LF) and >= 3 CR-terminated paragraphs. Complete paragraphs stay verified; the final cut paragraph is unverified; a
-lossy `truncated` damage entry reports the lost trailer. Other CR-only text would match too; DOS/Unix text, binary
-and the kit junk files do not. When identity
-is independently known, direct decoding preserves CR paragraphs, marks an
-unterminated final paragraph unverified, reports a missing marker as truncated,
-and replaces unsupported bytes with U+FFFD + `invalid_value`. Independent
-paragraphs stay intact. Recognition/text scans are capped at 8MiB; decoding also
-caps records at 100,000. Exhaustion retains prior records with explicit lossy
-`bad_length`; a cut current prefix remains unverified.
+says numbering is uncertain).
+
+**Conservative identification (issue #15):** no marker, fewer than 4 trailer bytes,
+or any other failed recognition check returns zero confidence. Ordinary CR text
+remains UNKNOWN, regardless of paragraph count or filename. This supersedes the
+old 0.55 text-only truncation heuristic: it could not distinguish a BRAVO fragment
+from an ordinary memo, table or log. Damaged-text recovery still requires the
+marker/trailer evidence and 70% text threshold above.
+
+**Explicit direct recovery:** `bravo.decode(data, name)` remains a library API;
+there is no CLI force mode or engine interface change. If recognition fails,
+every emitted paragraph is `verified:false` with `issues`: `truncated` for a
+missing marker/short trailer, `bad_length` when the marker lies outside the text
+budget, or `invalid_value` for other failed checks. Existing damage entries
+report missing marker/trailer bytes or budget exhaustion; other identification
+failures add a lossless `invalid_value` explaining the uncertain identity.
+Unsupported bytes become U+FFFD; an unterminated final paragraph and indices
+following damaged bytes remain unverified. Recognition/text scans are capped at
+8MiB; decoding also caps records at 100,000. Exhaustion reports lossy `bad_length`.
+
+**Limits:** the trailer layout and total length remain unproved. A cut that
+leaves sufficient trailer evidence can still pass detection and report `ok`;
+this validates recovered text under the stated assumptions, not trailer
+completeness. Unrelated text with a matching binary suffix can still be
+misidentified. No checksum proves the paragraphs: plausible ASCII edits or
+lost CRs replaced by valid text can escape damage detection.
 
 **Unproved bonus:** no consistent start/length/font/look layout was established
 for both trailers. `metadata.format_runs` remains absent, and direct text
