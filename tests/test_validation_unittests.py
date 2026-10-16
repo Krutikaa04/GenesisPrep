@@ -275,6 +275,21 @@ class UnittestRunner(unittest.TestCase):
                               cwd=Path(__file__).resolve().parents[1],
                               capture_output=True, text=True, encoding="utf-8", timeout=20)
 
+    def test_existing_bytecode_cannot_hide_same_size_same_timestamp_source_edit(self):
+        import py_compile
+        passing = "import unittest\nclass Cases(unittest.TestCase):\n def test_current(self): pass\n"
+        failing = "import unittest\nclass Cases(unittest.TestCase):\n def test_current(self): self.fail('fresh')\n"
+        width = max(len(passing), len(failing))
+        source = self.sources / "test_fresh.py"
+        source.write_text(passing.ljust(width), encoding="utf-8")
+        timestamp = source.stat()
+        py_compile.compile(str(source), doraise=True)
+        source.write_text(failing.ljust(width), encoding="utf-8")
+        os.utime(source, ns=(timestamp.st_atime_ns, timestamp.st_mtime_ns))
+        evidence = self.run_suite()
+        self.assertEqual((evidence.status, evidence.failed, evidence.passed), ("failed", 1, 0))
+        self.assertIn("fresh", (self.output / "tests.log").read_text(encoding="utf-8"))
+
     def test_cli_concise_verbose_and_exit_codes(self):
         self.write_suite('''
             import unittest

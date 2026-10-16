@@ -55,8 +55,10 @@ commands and are never shell-expanded.
 
 ## Integration boundary for issues #10, #11 and #12
 
-Those runner implementations are separate issues and are not bundled by #13.
-Until installed, live modes return 3 and name their missing prerequisite;
+The reference runner (#10) now implements this boundary; see
+[reference-runner usage and artifacts](REFERENCE-RUNNER.md). Other runner
+implementations/integration remain separate work. Until installed with this
+boundary, live modes return 3 and name their missing prerequisite;
 no output directories are created and no passing measurements are fabricated.
 Existing source tools remain available meanwhile:
 `python tools/compare_expected.py`, unittest discovery and `tools/evaluate.py`.

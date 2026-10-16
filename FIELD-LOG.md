@@ -380,3 +380,52 @@ derived from `samples/official/`. Dates are the working-session dates.
 * Final usage review added malformed boolean-mode assignments (for example,
   --verify=true) to diagnostic usage-error handling: exit 2 rather than legacy
   recovery's exit 0. Existing recovery usage semantics are retained.
+
+## 2026-10-16 — M3 prerequisite: fresh source-test execution
+
+* Issue #10's full-suite check exposed an existing #11 false-pass risk: a
+  same-size rewrite inside one timestamp tick could reuse cached passing test
+  code. This is a runner correctness defect, not a reason to skip/weaken tests.
+* Give each worker a fresh temporary PYTHONPYCACHEPREFIX, bypassing existing
+  caches without altering sources or global interpreter configuration. Added a
+  known-answer regression seeding stale passing bytecode, rewriting a failing
+  source at the same size/timestamp, and requiring the current failure outcome.
+
+## 2026-10-16 — M3 issue #10 reference runner
+
+* Started codex/issue-10-reference from master 3eb541d. Added the isolated
+  reference service with #13 run(request) integration, standalone/API entry
+  points and saved actual outputs, original reference snapshots, structured
+  differences, dynamic counts and schema-1 provenance/artifact hashes.
+* Moved matching into the runtime module and imported its compatibility API
+  from tools/compare_expected.py. Existing semantics remain deliberate:
+  optional partial identities, requested fields only, last duplicate identity,
+  any_of damage kinds; lossy/offset/detail are not compared by the old tool.
+* Missing/empty/malformed resources cannot produce a passing empty run. Strict
+  loading rejects traversal, duplicate JSON keys, nonfinite values and malformed
+  matching/damage shapes. Read budgets are explicit. Input hashes and decoding
+  use the same snapshots; incomplete resource collection leaves hash/counts
+  unknown. No decoder, fixture or recovery-contract edits.
+* Evidence creation refuses protected/aliased directories and any nonempty
+  destination, preserving existing recovery reports and earlier evidence.
+  Artifacts use exclusive numeric paths with relative references and SHA-256.
+* Focused known-answer tests cover official 7/7 and s04's optional partial
+  record, mismatch locations, legacy matching behavior, malformed/missing
+  resources, bounds, immutable inputs, aliases and portable execution outside
+  the checkout with explicit Unicode/space paths.
+* Added explicit incomplete-comparison evidence for decoder exceptions and
+  unusable actual matching keys, retaining any actual result instead of
+  manufacturing agreement. Snapshot-mutation regression confirms hashes
+  describe the same bytes that were decoded.
+* After the isolated stale-bytecode prerequisite fix, the ordinary Python 3.12
+  command passes without a bytecode environment workaround: 451 tests run,
+  one platform skip; organizer comparison remains 7/7.
+* Canonical release build/check passed on Python 3.12: extracted-source,
+  portable and installed recovery produce 31 identical JSON files with all
+  7 references. The canonical portable --verify mode also passes 7/7 using
+  an explicit external kit from an unrelated working directory.
+* Live CLI/standalone presentation now resolves artifact references against
+  the saved envelope directory, as historical presentation already did; added
+  a regression for usable absolute paths to actual/comparison artifacts.
+* Final live-path regression brings discovery to 452 tests (one platform skip),
+  all other tests pass without environment workarounds; references remain 7/7.

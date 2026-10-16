@@ -180,6 +180,9 @@ def run_tests(*, output_dir, tests_dir=None, source_kit=None, pattern="test_*.py
             env["PYTHONIOENCODING"] = "utf-8"
             with tempfile.TemporaryDirectory(prefix="deadbits-unittest-") as temp:
                 result_path = Path(temp) / "result.json"
+                # Same-size edits within a timestamp tick can leave a valid-looking
+                # stale .pyc. A fresh prefix also bypasses existing source caches.
+                env["PYTHONPYCACHEPREFIX"] = str(Path(temp) / "pycache")
                 # The import root may be a checkout directory OR an installed
                 # .pyz archive. Do not treat __file__ inside a zip as a script.
                 command = [sys.executable, "-c", _BOOTSTRAP,

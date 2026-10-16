@@ -167,7 +167,10 @@ def main(argv=None) -> int:
             evidence_path = args.evidence_file.resolve() if args.evidence_file else None
             evidence = (diagnostics.load_evidence(evidence_path, mode) if evidence_path else
                         diagnostics.run_validation(mode, request))
-            presentation.emit(presentation.validation(evidence, args.verbose, evidence_path), sys.stdout)
+            presentation_path = evidence_path
+            if presentation_path is None and request.evidence_dir is not None:
+                presentation_path = request.evidence_dir / "validation.json"
+            presentation.emit(presentation.validation(evidence, args.verbose, presentation_path), sys.stdout)
             return diagnostics.exit_code(evidence)
         except Exception as exc:
             presentation.emit("salvage: validation error: %s: %s" % (type(exc).__name__, exc), sys.stderr)
