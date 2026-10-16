@@ -94,17 +94,26 @@ class ReleaseIntegrityTests(unittest.TestCase):
 
     @unittest.skipUnless(__import__("shutil").which("git"), "Git needed for canonical blob regression")
     def test_source_blob_comparison_ignores_autocrlf(self):
-        # Override configuration only for subprocesses; never change this repository's config.
+        # A source ZIP deliberately has no .git directory. Build an independent
+        # repository so this regression also runs from extracted release source.
         from check_release import command as real_command
         def crlf_command(argv, cwd, env=None, input_data=None):
             if argv[0] == "git":
                 argv = ["git", "-c", "core.autocrlf=true", *argv[1:]]
             return real_command(argv, cwd, env, input_data)
-        with mock.patch("check_release.command", side_effect=crlf_command):
-            files = committed_files(ROOT)
-        canonical = subprocess.check_output(["git", "show", "HEAD:.dockerignore"], cwd=ROOT)
-        self.assertEqual(files[".dockerignore"], canonical)
-        self.assertNotIn(b"\r\n", files[".dockerignore"])
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary)
+            text, binary = b"cache\n*.pyc\n", b"\0\r\n\xff\n"
+            (repo / ".dockerignore").write_bytes(text)
+            (repo / "fixture.bin").write_bytes(binary)
+            real_command(["git", "init"], repo)
+            real_command(["git", "-c", "core.autocrlf=false", "add", "."], repo)
+            real_command(["git", "-c", "user.name=Release test",
+                          "-c", "user.email=release-test@example.invalid",
+                          "-c", "commit.gpgsign=false", "commit", "-m", "Canonical blob fixture"], repo)
+            with mock.patch("check_release.command", side_effect=crlf_command):
+                files = committed_files(repo)
+            self.assertEqual(files, {".dockerignore": text, "fixture.bin": binary})
 
     def test_import_audit_rejects_network_or_third_party_modules(self):
         self.assertEqual(audit_python({"main.py": b"import json\nfrom pathlib import Path\n"}),

@@ -365,3 +365,6 @@ derived from `samples/official/`. Dates are the working-session dates.
   an optional executable field. The release checker permits only the exact
   installer self-check command on both platforms; other child commands remain
   blocked. A regression exercises both event representations.
+* The source download is tested independently of a Git checkout: its full unit
+  suite runs after extraction, using stored executable modes and temporary Git
+  fixtures for packaging tests. Organizer fixture hashes must remain unchanged.

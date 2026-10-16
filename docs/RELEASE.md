@@ -43,6 +43,8 @@ and tests those same downloadable bytes on Linux/Python3.10,3.12,3.14,
 macOS/Python3.12 and Windows/Python3.12. The platform gate:
 
 1. Checks checksums, committed source contents, embedded version and ten adapters.
+   Runs the full test suite from extracted source without Git metadata, and
+   checks that its organizer fixtures remain unchanged.
 2. Runs extracted source, portable file and installed command from a foreign
    directory without checkout imports masking missing modules.
 3. Requires31 identical JSON files for30 samples and all7 organizer references.

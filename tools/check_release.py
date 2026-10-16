@@ -332,6 +332,12 @@ def verify_source_snapshot(source_data, root, cwd):
                         if entry.filename == "salvage" or entry.filename.endswith("/salvage"))
         require(launcher.external_attr >> 16 & 0o111, "source salvage launcher is not executable")
         archive.extractall(cwd)
+        if os.name != "nt":
+            # zipfile.extractall ignores stored POSIX modes. Reproduce normal
+            # unzip behavior so the source's ./salvage launcher can be tested.
+            for entry in archive.infolist():
+                if not entry.is_dir():
+                    (cwd / entry.filename).chmod((entry.external_attr >> 16) & 0o777)
     prefix = launcher.filename[:-len("salvage")]
     return len(actual), cwd / prefix
 
@@ -386,6 +392,20 @@ def verify(dist, root=ROOT):
                                                            work / "source")
         proof["source_files"] = source_files
         proof["checks"].append("source archive equals tracked HEAD, including executable launcher")
+        source_kit = source_root / "samples" / "official"
+        source_before = snapshot(source_kit)
+        tested = command([sys.executable, "-m", "unittest", "discover", "-s", "tests",
+                          "-p", "test_*.py"], source_root)
+        test_log = tested.stdout + b"\n" + tested.stderr
+        count = re.search(rb"(?:^|\n)Ran (\d+) tests? in ", test_log)
+        require(count is not None and int(count.group(1)) > 0,
+                "source archive unit suite did not report any tests")
+        skipped = re.search(rb"(?:^|\n)OK \(skipped=(\d+)\)", test_log)
+        proof["source_tests"] = int(count.group(1))
+        proof["source_tests_skipped"] = int(skipped.group(1)) if skipped else 0
+        require(snapshot(source_kit) == source_before,
+                "source archive tests modified organizer fixtures")
+        proof["checks"].append("full unit suite passes from extracted source without Git metadata")
         bundle = work / "moved bundle ü"
         bundle.mkdir()
         with safe_zip((dist / names[1]).read_bytes()) as archive:
