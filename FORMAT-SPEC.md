@@ -270,6 +270,28 @@ WAD: `IWAD`/`PWAD`, numlumps u32, dir_off u32; 16-byte entries offset u32, size 
 No per-entry checksum exists, so in-bounds payload corruption is undetectable (stated limitation).
 Confirmed: structure fully accounts for s23/s24 (directory ends exactly at EOF).
 
+### M3 archive hardening (2026-10-16)
+* Decode at most 100,000 physically complete entries. Declared counts stay in
+  metadata; excluded entries produce lossy `bad_length`, never an `ok` result.
+* Payloads must fit outside the header/directory. Invalid entries retain raw
+  directory facts, omit SHA-256, and carry `verified:false` / `oob_pointer`.
+* Duplicate names and overlapping nonempty ranges are retained and marked
+  unverified with lossless `invalid_value`. **Policy assumption:** either may
+  be intentional, but the intended identity/range cannot be established.
+* Zero-byte markers hash empty bytes without dereferencing their raw pointer
+  (**policy assumption** for PAK as well as WAD). Adjacent ranges do not overlap.
+* Hashing uses memoryviews and exact-range caching. Unique hashes consume at
+  most 4 times the input size; budget-excluded hashes are omitted and flagged
+  with lossy `bad_length`. Alias reuse remains available after exhaustion.
+* Duplicate lookup is linear; a sorted interval sweep reports one warning per
+  connected overlap component in O(n log n), rather than every overlapping pair.
+* Only PACK/IWAD/PWAD are supported. Bare magic is insufficient; damaged count
+  or directory length needs independent credible entry evidence among at most
+  eight entries. Complete directory loss prevents evidence-based recovery.
+* Empty/control-containing names are retained unverified. Bytes after a name's
+  first NUL remain ignored. A calculated hash proves selected bytes, not their
+  identity before corruption; these formats contain no integrity checksum.
+
 ## CVT (s18-s19) — Commodore 64 GEOS convert
 254-byte blocks. Block 0: type, name char[16] PETSCII (0xA0 padded) at 3, structure u8 at 0x15
 (0 seq, 1 vlir), geos_type at 0x16, date year-1900/month/day/hour/minute at 0x17, declared_blocks u16

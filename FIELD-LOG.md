@@ -206,6 +206,18 @@ derived from `samples/official/`. Dates are the working-session dates.
 ### PAK / WAD (s23, s24)
 * Standard layouts; directory ends exactly at EOF in both. WAD names carry garbage after the NUL (ignored).
 
+* M3-1: independent fixtures and sample mutations now cover huge counts,
+  duplicates, nested overlaps, header/directory overlap, empty markers, magic
+  variants, incomplete directories and trailing bytes. Intact s23/s24 hashes
+  and statuses are unchanged.
+* Direct WAD decoding previously raised UnicodeDecodeError for non-ASCII magic;
+  both archive decoders now validate their magic without raising.
+* Physical count bounds did not bound repeated overlapping payload hashes.
+  Exact aliases now share digests, while unique ranges share a 4x-input byte
+  budget. Instrumented tests prove memoryview hashing and bounded byte work.
+* Rejected pairwise overlap reporting as quadratic in time and output size.
+  A sorted interval sweep retains ambiguous entries and marks each component.
+
 ### WPD / BRAVO (s14-s17)
 * WPD encryption key sits at 0x0C and is 0 in both samples; hint says some files are protected -> non-zero
   = `unsupported`. s15 declares text up to byte 223 in a 136-byte file => truncated.
