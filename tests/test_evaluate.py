@@ -10,6 +10,7 @@ sys.path.insert(0, str(ROOT / 'tools'))
 from evaluate import (aggregate, compare_records, decode, evaluate, load_corpus,
                       make_baseline)  # noqa: E402
 from make_variants import MUTATIONS, OFFICIAL, create_corpus, variants  # noqa: E402
+from helpers import CAN_SYMLINK, SYMLINK_SKIP_REASON  # noqa: E402
 
 
 def document(records=(), fmt='PAK', status='ok'):
@@ -71,6 +72,7 @@ class VariantTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'outside'):
                 create_corpus(temp, OFFICIAL / 'generated-variants')
 
+    @unittest.skipUnless(CAN_SYMLINK, SYMLINK_SKIP_REASON)
     def test_corpus_refuses_existing_output_symlink(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
