@@ -58,6 +58,131 @@ class WPD(unittest.TestCase):
         self.assertEqual(res.records[0]["text"], "a b c d-ef\tZ")
         self.assertEqual(res.status, "ok")
 
+    def test_extended_ascii_set_zero_known_answers(self):
+        # WP5 C0 layout is gate, character number, character set, gate.
+        # Expected ASCII comes from the encoding definition, never decode().
+        expected = bytes(range(32, 127)).decode("ascii")
+        text = b"".join(bytes((0xC0, value, 0, 0xC0)) for value in range(32, 127))
+        data = document(text + b"\n\x0cAfter\n")
+        res = salvage_bytes(data, "extended.bin")
+        check_contract(self, res, len(data))
+        self.assertEqual((res.format, res.status), ("WPD", "ok"))
+        self.assertEqual(res.records, [
+            {"index": 0, "type": "paragraph", "text": expected},
+            {"index": 1, "type": "page_break", "text": ""},
+            {"index": 2, "type": "paragraph", "text": "After"}])
+        self.assertEqual(res.damage, [])
+
+    def test_extended_unsupported_sets_and_nonprintable_ascii_stay_uncertain(self):
+        candidates = [(value, 0) for value in range(256) if not 32 <= value < 127]
+        candidates += [(65, charset) for charset in range(1, 256)]
+        for value, charset in candidates:
+            with self.subTest(value=value, charset=charset):
+                group = bytes((0xC0, value, charset, 0xC0))
+                res = wpd.decode(document(b"Before\nA" + group + b"B\nAfter\n"), "x")
+                self.assertEqual(res.records, [
+                    {"index": 0, "type": "paragraph", "text": "Before"},
+                    {"index": 1, "type": "paragraph", "text": "A\ufffdB",
+                     "verified": False, "issues": ["unknown_record"]},
+                    {"index": 2, "type": "paragraph", "text": "After"}])
+                self.assertEqual(res.status, "partial")
+                self.assertEqual(res.damage[0]["offset"], 56)
+
+    def test_additional_single_byte_function_known_answers(self):
+        for code in (0x8C, 0x90, 0x99):
+            with self.subTest(code=hex(code)):
+                res = wpd.decode(document(b"First" + bytes((code,)) + b"\x0cSecond\n"), "x")
+                self.assertEqual(res.records, [
+                    {"index": 0, "type": "paragraph", "text": "First"},
+                    {"index": 1, "type": "page_break", "text": ""},
+                    {"index": 2, "type": "paragraph", "text": "Second"}])
+                self.assertEqual(res.status, "ok")
+        for code, expected in ((0x93, " "), (0x94, " "), (0x95, " "), (0xAB, "-"),
+                               (0xAC, "\u00ad"), (0xAD, "\u00ad"), (0xAE, "\u00ad")):
+            with self.subTest(code=hex(code)):
+                res = wpd.decode(document(b"A" + bytes((code,)) + b"B\n"), "x")
+                self.assertEqual(res.records, [{"index": 0, "type": "paragraph", "text": "A" + expected + "B"}])
+                self.assertEqual(res.status, "ok")
+                self.assertEqual(res.damage, [])
+
+    def test_page_layout_functions_have_no_text_payload(self):
+        # Literal independently assembled frames, not parser widths or enums.
+        frames = (
+            bytes.fromhex("d0 01 0c00 0000 0000 9001 b004 0c00 01 d0"),  # left/right margins
+            bytes.fromhex("d0 02 0800 0001 0002 0800 02 d0"),  # line spacing
+            bytes.fromhex("d0 05 0c00 0000 0000 b004 b004 0c00 05 d0"),  # top/bottom margins
+            bytes.fromhex("d0 06 0600 00 03 0600 06 d0"),  # justification
+        )
+        for frame in frames:
+            with self.subTest(frame=frame.hex()):
+                res = wpd.decode(document(b"Before\nA" + frame + b"B\n\x0cAfter\n"), "x")
+                self.assertEqual(res.records, [
+                    {"index": 0, "type": "paragraph", "text": "Before"},
+                    {"index": 1, "type": "paragraph", "text": "AB"},
+                    {"index": 2, "type": "page_break", "text": ""},
+                    {"index": 3, "type": "paragraph", "text": "After"}])
+                self.assertEqual(res.status, "ok")
+                self.assertEqual(res.damage, [])
+
+    def test_page_layout_unknown_lengths_and_justifications_stay_uncertain(self):
+        for subcode, width in ((1, 8), (2, 4), (5, 8), (6, 2)):
+            for size in (0, width - 1, width + 1):
+                frame = variable(0xD0, b"X" * size, subcode)
+                res = wpd.decode(document(b"A" + frame + b"B\n"), "x")
+                self.assertEqual(res.status, "partial")
+                self.assertEqual(res.records[0]["text"], "AB")
+                self.assertEqual(res.records[0]["issues"], ["unknown_record"])
+                self.assertFalse(res.records[0]["verified"])
+        for payload in (b"\0\x05", b"\xff\0", b"\x01\xff"):
+            res = wpd.decode(document(b"A" + variable(0xD0, payload, 6) + b"B\n"), "x")
+            self.assertEqual(res.status, "partial")
+            self.assertFalse(res.records[0]["verified"])
+        for old in range(5):
+            for new in range(5):
+                res = wpd.decode(document(b"A" + variable(0xD0, bytes((old, new)), 6) + b"B\n"), "x")
+                self.assertEqual(res.records, [{"index": 0, "type": "paragraph", "text": "AB"}])
+                self.assertEqual(res.status, "ok")
+
+    def test_layout_payload_controls_do_not_create_paragraphs_or_page_breaks(self):
+        for subcode, payload in ((1, b"\n\x0c\xc0\x41\0\xc0\x90\x99"),
+                                 (2, b"\n\x0c\x90\x99"), (5, b"FAKE\n\x0c\x90\x99")):
+            res = wpd.decode(document(b"A" + variable(0xD0, payload, subcode) + b"B\n"), "x")
+            self.assertEqual(res.records, [{"index": 0, "type": "paragraph", "text": "AB"}])
+            self.assertEqual(res.status, "ok")
+
+    def test_new_character_and_layout_frames_require_complete_boundaries(self):
+        frames = (b"\xc0A\0\xc0", bytes.fromhex("d0 06 0600 00 03 0600 06 d0"))
+        for frame in frames:
+            for keep in range(1, len(frame)):
+                data = document(b"Good\nPrefix" + frame[:keep], frame[keep:] + b"Not text\n")
+                res = wpd.decode(data, "x")
+                check_contract(self, res, len(data))
+                self.assertEqual([r["text"] for r in res.records], ["Good", "Prefix"])
+                self.assertEqual(res.status, "partial")
+                self.assertFalse(res.records[-1]["verified"])
+                self.assertEqual(res.damage[0]["kind"], "truncated")
+            broken = frame[:-1] + b"!"
+            res = wpd.decode(document(b"Good\nPrefix" + broken + b"LEAK\n"), "x")
+            self.assertEqual([r["text"] for r in res.records], ["Good", "Prefix"])
+            self.assertEqual(res.damage[0]["kind"], "bad_length")
+
+    def test_new_functions_obey_byte_and_record_budgets(self):
+        frames = (b"\xc0A\0\xc0", bytes.fromhex("d0 06 0600 00 03 0600 06 d0"))
+        for frame in frames:
+            for keep in range(1, len(frame)):
+                with patch.object(wpd, "MAX_TEXT_BYTES", 6 + keep):
+                    res = wpd.decode(document(b"Good\nA" + frame + b"B\n"), "x")
+                self.assertEqual([r["text"] for r in res.records], ["Good", "A"])
+                self.assertFalse(res.records[-1]["verified"])
+                self.assertEqual(res.records[-1]["issues"], ["bad_length"])
+                self.assertEqual(res.damage[0]["offset"], 54)
+        for code in (0x8C, 0x90, 0x99):
+            with patch.object(wpd, "MAX_RECORDS", 2):
+                res = wpd.decode(document(b"A" + bytes((code,)) + b"B" + bytes((code,)) + b"C\n"), "x")
+            self.assertEqual([r["text"] for r in res.records], ["A", "B"])
+            self.assertEqual(res.status, "partial")
+            self.assertEqual(res.damage[0]["kind"], "bad_length")
+
     def test_all_fixed_function_widths_skip_payload(self):
         widths = (4, 9, 11, 3, 3, 5, 6, 7, 4, 5, 6, 6, 8, 10, 10, 12)
         for code, width in enumerate(widths, 0xC0):
