@@ -2,10 +2,12 @@
 
 These checks bound work before decoding, rather than truncating bytes and
 passing an incomplete input off as complete. They deliberately may refuse a
-large, valid file. Directory declarations remain hostile; no payload is decoded
-and no declared output length is trusted as an allocation/work bound.
+large, valid file. Named large-input helpers may replace a coarse refusal only
+after bounded checks. Declared output lengths never establish allocation/work bounds.
 """
 import struct
+
+from ._large import resource_issue as _large_resource_issue
 
 MAX_LEGACY_INPUT_BYTES = 2 * 1024 * 1024
 MAX_STRUCTURAL_ITEMS = 100_000
@@ -128,9 +130,11 @@ def resource_issue(data: bytes, fmt: str):
         # this format's coarse input ceiling. The engine's 128 MiB cap remains.
         return _vault_issue(data)
     if len(data) > MAX_LEGACY_INPUT_BYTES:
-        return "%s input exceeds the %d-byte legacy decoder safety limit" % (fmt, MAX_LEGACY_INPUT_BYTES)
+        reason = "%s input exceeds the %d-byte legacy decoder safety limit" % (fmt, MAX_LEGACY_INPUT_BYTES)
+        return _large_resource_issue(data, fmt, reason)
     minimum = MIN_ITEM_BYTES.get(fmt)
     if minimum is not None and len(data) > minimum * MAX_STRUCTURAL_ITEMS:
-        return ("%s conservative structural-item projection exceeds the %d-item safety budget"
-                % (fmt, MAX_STRUCTURAL_ITEMS))
+        reason = ("%s conservative structural-item projection exceeds the %d-item safety budget"
+                  % (fmt, MAX_STRUCTURAL_ITEMS))
+        return _large_resource_issue(data, fmt, reason)
     return None
