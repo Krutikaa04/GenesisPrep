@@ -133,6 +133,21 @@ derived from `samples/official/`. Dates are the working-session dates.
 * `sha256` of a payload whose length != `size` is dropped: it cannot match the original and only looks authoritative.
 * Entry flag bit0 flipped on a block with no 0x90 byte produces an identical payload (only `compressed` differs): undetectable.
 
+* Issue #17 VAULT slice (2026-10-16): independent 2,881,456-byte binary and
+  2,377,456-byte text archives were refused by the 2MiB ceiling; a 98,416-byte
+  low-expansion RLE archive was refused by the 127x worst-case projection.
+  Replaced those VAULT-only assumptions with exact, allocation-free expansion
+  counts and type-aware work/output charges. All three now recover their exact
+  48/48/80 independently known records without damage. Work/output caps stay
+  16MiB; other formats keep their current limits.
+* Negative controls: repeated raw/RLE/XOR-RLE aliases, late invalid RLE escapes
+  after expanded prefixes, and record/output amplification still refuse before
+  payload decoding. Invalid streams must charge the prefix they could allocate;
+  treating an invalid stream as zero work would be unsafe. A deterministic scan
+  guard proves later aliases are not scanned after the work budget is exhausted.
+  See reports/issue-17-vault-profile.json and docs/VAULT-LARGE-FILES.md for measured
+  times, traced allocation, exact bounds and their limitations.
+
 ### WKS (s11-s13)
 * Record stream per the public Lotus layout validated on s11 expected. s12 is a stress file: out-of-order
   cells, a cell written twice (kept last), blank formatted cell, unknown opcode 0xFA, named range.

@@ -29,7 +29,9 @@ class LegacyPreflight(unittest.TestCase):
                     self.assertIsNone(_limits.resource_issue((SAMPLES / name).read_bytes(), fmt))
 
     def test_generic_legacy_input_ceiling_is_inclusive(self):
-        for fmt in ("LIBRA-98", "VAULT", "CVT"):
+        # VAULT now has its own measured work/output preflight rather than this
+        # generic byte ceiling; its dedicated hostile-budget tests remain below.
+        for fmt in ("LIBRA-98", "CVT"):
             with patch.object(_limits, "MAX_LEGACY_INPUT_BYTES", 16):
                 self.assertIsNone(_limits.resource_issue(b"\0" * 16, fmt))
                 reason = _limits.resource_issue(b"\0" * 17, fmt)
@@ -50,7 +52,7 @@ class LegacyPreflight(unittest.TestCase):
             def __getitem__(self, key):
                 raise AssertionError("preflight should reject before reading payload bytes")
 
-        for fmt in _limits.LEGACY_FORMATS:
+        for fmt in _limits.LEGACY_FORMATS - {"VAULT"}:
             reason = _limits.resource_issue(VirtualLargeInput(), fmt)
             self.assertIn("safety limit", reason)
 
@@ -72,7 +74,9 @@ class LegacyPreflight(unittest.TestCase):
 
     def test_vault_plain_payload_aliases_are_charged_repeatedly(self):
         data = vault_aliases(30, b"A" * 4096)
-        with patch.object(_limits, "MAX_VAULT_WORK_BYTES", 500_000):
+        with patch.object(_limits, "MAX_VAULT_WORK_BYTES", 700_000):
+            self.assertIsNone(_limits.resource_issue(data, "VAULT"))
+        with patch.object(_limits, "MAX_VAULT_WORK_BYTES", 600_000):
             reason = _limits.resource_issue(data, "VAULT")
         self.assertIn("projected payload work", reason)
 
