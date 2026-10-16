@@ -57,10 +57,14 @@ and local validation resources without installing or downloading anything.
 `./salvage input output --verbose` adds a per-file recovery table while keeping
 mandated JSON unchanged. Recovery counts do not imply accuracy.
 
-`--verify`, `--test` and `--benchmark` select validation services. Their live
-runners are being delivered separately in issues #10–#12; until available,
-these modes explicitly return unavailable (exit 3). They can already present
-saved schema-1 evidence using `--evidence-file`, always labelled historical.
+`--verify` now runs organizer comparisons and saves actual decoded JSON,
+reference snapshots, detailed differences and a provenance envelope. Supply
+`--kit-dir` for external fixtures and a new `--evidence-dir` outside protected
+inputs; see [reference runner](docs/REFERENCE-RUNNER.md).
+
+`--test` and `--benchmark` runner integration remains separately tracked. Missing
+live runners explicitly return unavailable (exit 3). All validation modes can
+present saved schema-1 evidence using `--evidence-file`, labelled historical.
 Validation exits are distinct from recovery's always-zero behavior. See
 [CLI modes and runner integration](docs/CLI-MODES.md) for paths, examples,
 exit codes and evidence protection.

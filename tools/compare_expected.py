@@ -13,42 +13,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from deadbits.engine import salvage_file  # noqa: E402
-
-
-def key(rec, match_on):
-    return tuple(rec.get(k) for k in match_on)
-
-
-def compare(actual: dict, exp: dict) -> list:
-    errs = []
-    for k in ("format", "status"):
-        if actual[k] != exp[k]:
-            errs.append("%s: got %r expected %r" % (k, actual[k], exp[k]))
-    for k, v in exp.get("metadata", {}).items():
-        if actual["metadata"].get(k) != v:
-            errs.append("metadata.%s: got %r expected %r" % (k, actual["metadata"].get(k), v))
-    mo = exp.get("match_on", ["id"])
-    got = {key(r, mo): r for r in actual["records"]}
-    want = {key(r, mo): r for r in exp["records"]}
-    optional = {key(r, mo) for r in exp.get("optional_partial_records", [])}
-    for k, er in want.items():
-        ar = got.get(k)
-        if ar is None:
-            errs.append("missing record %s" % (k,))
-            continue
-        for f, v in er.items():
-            if ar.get(f) != v:
-                errs.append("record %s.%s: got %r expected %r" % (k, f, ar.get(f), v))
-    for k in got:
-        if k not in want and k not in optional:
-            errs.append("extra record %s" % (k,))
-    exp_d = exp.get("expected_damage", [])
-    if not exp_d and actual["damage"]:
-        errs.append("unexpected damage: %s" % [d["kind"] for d in actual["damage"]])
-    for ed in exp_d:
-        if not any(d["kind"] in ed["any_of"] for d in actual["damage"]):
-            errs.append("expected damage any_of %s, got %s" % (ed["any_of"], [d["kind"] for d in actual["damage"]]))
-    return errs
+from deadbits.validation.reference import compare, key  # noqa: E402,F401
 
 
 def main():
