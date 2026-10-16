@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from helpers import SAMPLES, check_contract
+from helpers import CAN_SYMLINK, SAMPLES, SYMLINK_SKIP_REASON, check_contract
 from deadbits import engine
 from deadbits.model import Result
 
@@ -61,7 +61,7 @@ class Platform(unittest.TestCase):
             self.assertEqual(result.status, "failed")
             self.assertIn("changed", result.notes[0])
 
-    @unittest.skipUnless(hasattr(os, "symlink"), "symlinks unavailable")
+    @unittest.skipUnless(CAN_SYMLINK, SYMLINK_SKIP_REASON)
     def test_symlink_is_not_followed(self):
         with tempfile.TemporaryDirectory() as directory:
             source = Path(directory) / "link"
