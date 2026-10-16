@@ -277,3 +277,9 @@ derived from `samples/official/`. Dates are the working-session dates.
   the lazy CRC index before decoding was refused. Oversized legacy detection
   now uses a 64KiB prefix; an independent test verifies the full file never
   reaches that detector. UNKNOWN analysis is separately prefix-bounded.
+* Cross-review found `REPORT`/`Report` also alias the combined report on
+  case-insensitive volumes. Actual output file identity now detects reserved
+  aliases and previously produced output collisions in constant-time lookup;
+  the first result is preserved and later conflicts are explicitly failed.
+  Tests cover both filesystem case policies and an output alias introduced
+  between sibling writes.

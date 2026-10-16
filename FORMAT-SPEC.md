@@ -400,7 +400,9 @@ and entropy in `metadata`. Recognised-but-unreadable (e.g. `LB98` + 3 bytes, s29
 * Input/output directories must differ to avoid overwriting source files.
   Exact per-file names are kept. A basename already at the filesystem name
   limit may make its `.json` suffix impossible; basename `report` conflicts
-  with the mandated combined `report.json`. Those cases are explicitly failed
+  with the mandated combined `report.json` (including case aliases on
+  insensitive volumes). Actual output file identities also detect collisions
+  between different source names on a less permissive output volume. Those cases are explicitly failed
   in the combined report, whose three top-level keys are preserved. They
   cannot receive both mandated documents on that filesystem/contract.
 * Existing optional report-row notes carry operational failures. Whether

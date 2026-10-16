@@ -249,6 +249,50 @@ class CliSafety(unittest.TestCase):
             self.assertIn("collides", report["files"][0]["notes"][0])
             self.assertEqual(json.loads((out / "report.json").read_bytes()), report)
 
+    def test_case_variant_report_names_follow_actual_filesystem_identity(self):
+        from deadbits.cli import run
+        for name in ("REPORT", "Report"):
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                inp, out = root / "in", root / "out"
+                inp.mkdir()
+                out.mkdir()
+                probe = out / "CaseProbe"
+                probe.write_bytes(b"probe")
+                insensitive = (out / "caseprobe").exists()
+                probe.unlink()
+                (inp / name).write_bytes(b"unknown")
+                report = run(inp, out)
+                self.assertEqual(report["files"][0]["status"], "failed" if insensitive else "unrecognized")
+                if insensitive:
+                    self.assertIn("collides", report["files"][0]["notes"][0])
+                else:
+                    self.assertEqual(json.loads((out / (name + ".json")).read_bytes())["source_file"], name)
+                self.assertEqual(json.loads((out / "report.json").read_bytes()), report)
+
+    @unittest.skipUnless(hasattr(os, "link"), "hard links unavailable")
+    def test_existing_output_alias_does_not_overwrite_an_earlier_result(self):
+        from unittest.mock import patch
+        from deadbits.cli import run, _write_json
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            inp, out = root / "in", root / "out"
+            inp.mkdir()
+            (inp / "a").write_bytes(b"first")
+            (inp / "b").write_bytes(b"second")
+            (inp / "c").write_bytes(b"third")
+            def write_with_alias(path, obj):
+                _write_json(path, obj)
+                if path.name == "a.json":
+                    os.link(path, out / "b.json")
+            with patch("deadbits.cli._write_json", side_effect=write_with_alias):
+                report = run(inp, out)
+            self.assertEqual([row["status"] for row in report["files"]],
+                             ["unrecognized", "failed", "unrecognized"])
+            self.assertIn("collides", report["files"][1]["notes"][0])
+            self.assertEqual(json.loads((out / "a.json").read_bytes())["source_file"], "a")
+            self.assertEqual(json.loads((out / "c.json").read_bytes())["source_file"], "c")
+
     @unittest.skipUnless(os.name != "nt", "POSIX executable launcher")
     def test_native_executable_launcher_from_other_directory(self):
         with tempfile.TemporaryDirectory() as directory:

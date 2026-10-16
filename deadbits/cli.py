@@ -44,6 +44,7 @@ def run(in_dir: Path, out_dir: Path) -> dict:
     except OSError as exc:
         print("salvage: cannot read input directory: %s" % type(exc).__name__, file=sys.stderr)
         files = []
+    produced = {}
     for p in files:
         res = salvage_file(p)
         try:
@@ -55,11 +56,28 @@ def run(in_dir: Path, out_dir: Path) -> dict:
             res.notes.append("invalid decoder output: %s" % type(exc).__name__)
             doc = res.to_dict()
         try:
+            target = out_dir / (p.name + ".json")
+            report_path = out_dir / "report.json"
+            try:
+                previous = target.lstat()
+                collision = produced.get((previous.st_dev, previous.st_ino))
+            except FileNotFoundError:
+                collision = None
             if p.name == "report":
                 res.notes.append("per-file JSON name collides with combined report.json")
                 doc = dict(doc, status="failed")
+            elif collision is not None:
+                res.notes.append("per-file JSON name collides with output for %r" % collision)
+                doc = dict(doc, status="failed")
             else:
-                _write_json(out_dir / (p.name + ".json"), doc)
+                _write_json(target, doc)
+                # Case sensitivity is a volume property (including on macOS).
+                # Compare actual file identity instead of guessing from the OS.
+                if report_path.exists() and target.samefile(report_path):
+                    res.notes.append("per-file JSON name collides with combined report.json")
+                    doc = dict(doc, status="failed")
+                written = target.lstat()
+                produced[(written.st_dev, written.st_ino)] = p.name
         except OSError as exc:
             # A filesystem may reject the mandated name, e.g. a 255-byte input
             # basename plus '.json'. Preserve the failure and process siblings.
