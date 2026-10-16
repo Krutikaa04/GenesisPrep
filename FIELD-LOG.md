@@ -312,3 +312,34 @@ derived from `samples/official/`. Dates are the working-session dates.
 * Branch protection could not be enabled: the authenticated collaborator has
   push access but GitHub reports admin:false/maintain:false. Reviewed-PR-only
   workflow remains required; an owner must configure server-side enforcement.
+
+## 2026-10-16 — release 0.1 preparation
+
+* Isolated release/0.1 starts from reviewed master 9679465. Release tags and
+  downloaded artifacts do not merge this branch or change master.
+* Earlier internal tool version 0.2.0 had no published release. The first
+  public release is 0.1.0, with a separately versioned 0.1.0-rc.1 candidate;
+  one VERSION value supplies CLI and artifact metadata. Help/version flags
+  preserve the always-zero recovery exit behavior.
+* Removed optional report-row notes (organizer Q2 unresolved): exact required
+  keys remain, and operational details are printed to stderr.
+* Chose stdlib-only portable/installer archives. Rejected third-party binary
+  bootloaders for this release because the agreed runtime remains stdlib-only.
+  Installation requires supported Python already present; no automatic network
+  download, GUI, global system install, or shell-profile modification is added.
+* Build inputs come from clean committed Git files; archives have fixed metadata,
+  exact source commit, complete adapter package, manifests and SHA-256 sums.
+  Installer integrity/ownership checks prevent overwriting unrelated files;
+  rollback and managed uninstall are independently tested.
+* Python ZIP extraction can discard executable bits even when stored in the
+  archive; source installation guidance includes chmod+x fallback.
+* Windows CMD launchers need explicit handling of Unicode paths and percent
+  expansion. The installer quotes paths, disables delayed expansion, switches
+  to UTF-8 for invocation and restores console encoding/status afterwards.
+* New release checks compare extracted-source, portable and installed output
+  from unrelated working directories on all 30 fixtures, plus seven references,
+  ten adapters, strict keys, version agreement, fixture hashes and managed
+  removal. Python audit hooks deny socket use during checks; these are not
+  advertised as an operating-system network sandbox. Docker uses --network none.
+* Initial local validation: 359 tests run (358 pass, one APFS filename skip),
+  references 7/7. Platform jobs record independent evidence before publication.

@@ -405,6 +405,8 @@ and entropy in `metadata`. Recognised-but-unreadable (e.g. `LB98` + 3 bytes, s29
   between different source names on a less permissive output volume. Those cases are explicitly failed
   in the combined report, whose three top-level keys are preserved. They
   cannot receive both mandated documents on that filesystem/contract.
-* Existing optional report-row notes carry operational failures. Whether
-  organizers allow extra row keys remains Q2 in PROJECT-HANDOFF.txt; the
-  per-file six-key contract and all status/damage vocabularies are unchanged.
+* Release 0.1 removes the earlier optional report-row notes to avoid the
+  unresolved extra-key question Q2. Operational notes go to stderr; report
+  rows contain exactly file/format/status/records/damage. The report's three
+  top-level keys, per-file six-key contract and status/damage vocabularies
+  remain unchanged. Installer and portable packaging run this same engine.
