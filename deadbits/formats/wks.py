@@ -146,8 +146,8 @@ def _resync(data: bytes, start: int):
     return None
 
 
-def _cell(op: int, pl: bytes, pos: int, res: Result):
-    """Decode one cell record -> (record or None)."""
+def _cell(op: int, pl: bytes, pos: int, res: Result, issues: list):
+    """Decode one cell record -> (record or None); append problems found in its content to `issues`."""
     fmt, col, row = struct.unpack_from("<BHH", pl, 0)
     if col > MAX_COL or row > MAX_ROW:
         res.add_damage("invalid_value", pos, "cell position col %d row %d outside worksheet" % (col, row), True)
@@ -169,10 +169,21 @@ def _cell(op: int, pl: bytes, pos: int, res: Result):
             rec["alignment"] = ALIGN[text[0]]
             text = text[1:]
         rec["value"] = text
+        if not text.isascii():
+            # Label bytes are decoded as latin-1, which is an assumption (Lotus used its own LICS set), so a
+            # non-ASCII label cannot be vouched for; a flipped byte also lands here.
+            res.add_damage("invalid_value", pos, "label of cell %s contains non-ASCII bytes whose "
+                           "encoding is unverified" % rec["cell"], False)
+            issues.append("invalid_value")
     else:
         rec["type"] = "formula"
         rec["cached_value"] = struct.unpack_from("<d", pl, 5)[0]
         rec["formula_raw_hex"] = pl[15:].hex()
+        if rec["formula_raw_hex"][-2:] != "03":
+            # Every WK1 expression ends with the 0x03 terminator token (all kit formulas do).
+            res.add_damage("invalid_value", pos, "formula of cell %s does not end with the 0x03 terminator "
+                           "(corrupted token stream)" % rec["cell"], True)
+            issues.append("invalid_value")
     if nf is not None and rec["type"] != "label":
         rec["number_format"] = nf
         if nf.startswith("date:"):
@@ -270,9 +281,10 @@ def decode(data: bytes, name: str) -> Result:
         elif op in KNOWN_META:
             pass
         elif op in CELL_OPS:
-            rec = _cell(op, pl, pos, res)
+            cell_issues = ["bad_length"] if repaired else []
+            rec = _cell(op, pl, pos, res, cell_issues)
             if rec is not None:
-                keep(rec, *(("bad_length",) if repaired else ()))
+                keep(rec, *cell_issues)
         else:
             res.add_damage("unknown_record", pos, "unknown opcode 0x%04x (%d bytes skipped)" % (op, ln), False)
             unverified_any = True

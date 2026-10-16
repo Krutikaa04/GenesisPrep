@@ -79,11 +79,11 @@ Organizer references provide independent truth for seven sources:
 |---|---:|---:|---:|---:|---:|
 | LIBRA-98 | 12 | 46/60 | 37/60 | 0 | 0 |
 | LABLOG | 6 | 87/132 | 81/132 | 0 | 0 |
-| VAULT | 6 | 9/18 | 7/18 | 2 | 0 |
-| WKS | 6 | 84/120 | 82/120 | 2 | 0 |
+| VAULT | 6 | 9/18 | 7/18 | 0 | 0 |
+| WKS | 6 | 84/120 | 82/120 | 0 | 0 |
 | CVT | 6 | 5/6 | 1/6 | 1 | 0 |
 | EBCDIC-DUMP | 6 | 20/30 | 19/30 | 0 | 0 |
-| **Total** | **42** | **251/366 (68.6%)** | **227/366 (62.0%)** | **5** | **0** |
+| **Total** | **42** | **251/366 (68.6%)** | **227/366 (62.0%)** | **1** | **0** |
 
 Remaining recognized sources use verified pristine decoder output as a
 **regression baseline**, which does not independently prove accuracy:
@@ -92,7 +92,7 @@ Remaining recognized sources use verified pristine decoder output as a
 |---|---:|---:|---:|---:|---:|
 | LIBRA-98 | 18 | 53/72 | 44/72 | 0 | 0 |
 | LABLOG | 12 | 183/282 | 181/282 | 0 | 0 |
-| VAULT | 12 | 17/36 | 11/36 | 1 | 0 |
+| VAULT | 12 | 17/36 | 11/36 | 0 | 0 |
 | WKS | 12 | 108/162 | 108/162 | 0 | 0 |
 | CVT | 5 | 12/15 | 10/15 | 0 | 0 |
 | EBCDIC-DUMP | 12 | 32/48 | 30/48 | 1 | 0 |
@@ -100,14 +100,16 @@ Remaining recognized sources use verified pristine decoder output as a
 | WAD | 6 | 24/42 | 22/42 | 2 | 0 |
 | WPD | 12 | 36/48 | 29/48 | 0 | 0 |
 | BRAVO | 12 | 10/60 | 10/60 | 0 | 0 |
-| **Total** | **107** | **488/789 (61.9%)** | **458/789 (58.0%)** | **5** | **0** |
+| **Total** | **107** | **488/789 (61.9%)** | **458/789 (58.0%)** | **4** | **0** |
 
 Unknown originals stayed UNKNOWN in all 24 changed cases. Zero-record
 baselines have no recovery percentage. Original unverified records and optional
 partial reference records are excluded from recovery denominators. Truncation
 removes real bytes; these rates measure what survives this corpus, without
 predicting hidden-judge results. False verified cases in unchecksummed formats
-remain visible in the ledger, including archive payload hashes after corruption.
+remain visible in the ledger: archive payload hashes (no stored hash to check), a flipped PETSCII or EBCDIC
+character that is itself a valid character, and similar undetectable corruption. VAULT text that is not valid
+UTF-8 and WKS formulas or labels failing structure checks are now flagged unverified.
 
 ## Extension and parallel ownership
 

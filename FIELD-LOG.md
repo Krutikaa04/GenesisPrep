@@ -312,3 +312,11 @@ derived from `samples/official/`. Dates are the working-session dates.
 * Branch protection could not be enabled: the authenticated collaborator has
   push access but GitHub reports admin:false/maintain:false. Reviewed-PR-only
   workflow remains required; an owner must configure server-side enforcement.
+
+* False-verified sweep (from reports/m3-evaluation.json, 10 cases). Fixed 5: VAULT text that is not valid UTF-8
+  (flipped byte or zeroed RLE data inside a size-preserving block; text is UTF-8, confirmed on s09) is now
+  unverified + invalid_value; WKS formulas not ending in the 0x03 terminator token (all kit formulas do) and
+  non-ASCII labels (latin-1 is an assumption) are unverified + invalid_value. Not fixable, kept visible: CVT 0xCF
+  flipped to 0x30 reads as a valid "0"; PAK/WAD payload hashes (no stored hash or checksum); EBCDIC pad byte
+  flipped to a valid cp037 character (accented letters are legitimately allowed). Organizer-reference false
+  verified 5 -> 1, regression baseline 5 -> 4.
