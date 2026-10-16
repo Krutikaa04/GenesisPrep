@@ -1,4 +1,5 @@
-"""salvage <input_dir> <output_dir> -- always exits 0."""
+"""Offline recovery (always exit 0) and explicit diagnostic/validation modes."""
+import argparse
 import json
 import os
 import sys
@@ -95,29 +96,87 @@ def run(in_dir: Path, out_dir: Path) -> dict:
     return report
 
 
+def _parser():
+    parser = argparse.ArgumentParser(
+        prog="salvage", allow_abbrev=False,
+        description="Offline legacy recovery and validation evidence. Recovery lists inputs nonrecursively "
+                    "and writes <input name>.json plus report.json. Use distinct input/output folders; "
+                    "inspect statuses, damage and stderr for losses.",
+        epilog="Recovery always exits 0. Validation: 0 complete, 1 failed, 2 usage, 3 unavailable.")
+    parser.add_argument("input_dir", nargs="?", type=Path)
+    parser.add_argument("output_dir", nargs="?", type=Path)
+    modes = parser.add_mutually_exclusive_group()
+    modes.add_argument("--version", action="store_true", help="show the application version")
+    for mode, help_text in (("doctor", "inspect interpreter, adapters and local resources"),
+                            ("verify", "compare organizer references"),
+                            ("test", "execute an explicitly selected source test suite"),
+                            ("benchmark", "measure recovery against labelled baselines")):
+        modes.add_argument("--" + mode, action="store_true", help=help_text)
+    parser.add_argument("--verbose", action="store_true", help="show per-file counts or evidence provenance")
+    parser.add_argument("--source-dir", type=Path, help="trusted local source checkout / extracted source kit")
+    parser.add_argument("--kit-dir", type=Path, help="local kit containing samples/ and expected_outputs/")
+    parser.add_argument("--samples-dir", type=Path, help="override kit samples path")
+    parser.add_argument("--expected-dir", type=Path, help="override organizer reference path")
+    parser.add_argument("--corpus-dir", type=Path, help="persisted benchmark variant corpus")
+    parser.add_argument("--evidence-dir", type=Path, help="new output directory outside protected inputs")
+    parser.add_argument("--evidence-file", type=Path, help="display saved validation evidence as historical")
+    return parser
+
+
 def main(argv=None) -> int:
-    argv = sys.argv[1:] if argv is None else argv
-    if argv == ["--version"]:
-        print("salvage %s" % TOOL_VERSION)
-        return 0
-    if argv in (["--help"], ["-h"]):
-        print("usage: salvage <input_dir> <output_dir>\n\n"
-              "Recover supported legacy records into UTF-8 JSON, entirely offline.\n"
-              "Input listing is nonrecursive. Use different input/output directories.\n"
-              "Each input produces <input name>.json, plus report.json.\n"
-              "Inspect statuses/damage and stderr: the recovery CLI always exits 0.\n\n"
-              "Options:\n  --help, -h   Show this help\n"
-              "  --version    Show the release version")
-        return 0
-    if len(argv) != 2:
-        print("usage: salvage <input_dir> <output_dir>", file=sys.stderr)
-        return 0
+    argv = list(sys.argv[1:] if argv is None else argv)
+    parser = _parser()
+    # Recovery retains its historical zero exit even on usage/operational failure.
+    validation_requested = any(arg in {"--doctor", "--verify", "--test", "--benchmark"}
+                               for arg in argv[:argv.index("--") if "--" in argv else len(argv)])
     try:
-        r = run(Path(argv[0]), Path(argv[1]))
-        t = r["totals"]
-        print("salvage: %d files  %s" % (len(r["files"]), "  ".join("%s=%d" % (k, v) for k, v in t.items())))
+        args = parser.parse_args(argv)
+        mode = next((name for name in ("doctor", "verify", "test", "benchmark")
+                     if getattr(args, name)), None)
+        has_paths = any(getattr(args, name) is not None for name in
+                        ("source_dir", "kit_dir", "samples_dir", "expected_dir", "corpus_dir",
+                         "evidence_dir", "evidence_file"))
+        if mode or args.version:
+            if args.input_dir is not None or args.output_dir is not None:
+                parser.error("diagnostic/version modes do not accept recovery folders")
+            if args.version and (has_paths or args.verbose):
+                parser.error("--version does not accept validation options")
+        elif args.input_dir is None or args.output_dir is None or has_paths:
+            parser.error("recovery requires input_dir output_dir; path options require a validation mode")
+        if args.evidence_file is not None and (mode not in ("verify", "test", "benchmark") or
+                any(getattr(args, name) is not None for name in
+                    ("source_dir", "kit_dir", "samples_dir", "expected_dir", "corpus_dir", "evidence_dir"))):
+            parser.error("--evidence-file requires one validation mode and cannot combine with live paths")
+        if mode == "doctor" and args.evidence_dir is not None:
+            parser.error("--doctor is read-only and does not accept --evidence-dir")
+    except SystemExit as exc:
+        return (exc.code or 0) if validation_requested else 0
+    from . import presentation
+    if args.version:
+        presentation.emit("salvage " + TOOL_VERSION, sys.stdout)
+        return 0
+    if mode:
+        from . import diagnostics
+        try:
+            request = diagnostics.request_from(args)
+            if mode == "doctor":
+                rows, code = diagnostics.doctor(request)
+                presentation.emit("Installation diagnostics (presence checks only)\n" +
+                                  presentation.table(("Check", "Available", "Detail"), rows), sys.stdout)
+                return code
+            evidence_path = args.evidence_file.resolve() if args.evidence_file else None
+            evidence = (diagnostics.load_evidence(evidence_path, mode) if evidence_path else
+                        diagnostics.run_validation(mode, request))
+            presentation.emit(presentation.validation(evidence, args.verbose, evidence_path), sys.stdout)
+            return diagnostics.exit_code(evidence)
+        except Exception as exc:
+            presentation.emit("salvage: validation error: %s: %s" % (type(exc).__name__, exc), sys.stderr)
+            return 1
+    try:
+        report = run(args.input_dir, args.output_dir)
+        presentation.emit(presentation.recovery(report, args.verbose), sys.stdout)
     except Exception as exc:
-        print("salvage: error: %s" % exc, file=sys.stderr)
+        presentation.emit("salvage: error: %s" % exc, sys.stderr)
     return 0
 
 

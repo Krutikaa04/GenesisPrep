@@ -350,3 +350,26 @@ derived from `samples/official/`. Dates are the working-session dates.
   Recomputed evaluation equals the current-master ledger exactly (180 variants,
   173 changed), so restoring packaging has not changed decoder measurements.
   Local offline Docker build/run also matches all 31 native JSON files exactly.
+
+## 2026-10-16 — M3 issue #13 CLI diagnostics and presentation
+
+* Started codex/issue-13-cli from integrated master f089bc1, including the
+  schema-1 evidence model. No decoder or official fixture changes.
+* Established exit policy before implementation: recovery remains always 0;
+  validation uses 0 complete, 1 failed/error, 2 usage, 3 unavailable. Added
+  argparse modes, plain recovery tables, read-only doctor and historical
+  schema-1 evidence presentation with separate baseline/outcome tables.
+* Runner issues #10–#12 are still separate. Missing implementations explicitly
+  return unavailable without creating output. Documented run(ValidationRequest)
+  integration; fake runners test dispatch/persistence without duplicating their
+  comparison, test-accounting or benchmark algorithms.
+* Historical evidence retains recorded environment/version/time and resolves
+  artifact references against its saved location. Absent/empty metrics never
+  turn into passing measurements or arbitrary-input accuracy percentages.
+* Fresh evidence destinations protect inputs and prior recovery/evidence
+  output; resolved symlink aliases, existing destinations, reserved filenames,
+  runner exceptions, terminal controls and limited encodings have regressions.
+* Local Python 3.12 validation: 414 tests run, one platform skip, all others
+  pass; organizer references 7/7. Offline Docker parity remains 31/31
+  byte-identical JSON files. Portable-mode diagnostics run outside the source
+  checkout in a focused regression; missing resources remain unavailable.
