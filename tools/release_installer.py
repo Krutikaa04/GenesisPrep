@@ -259,6 +259,12 @@ def uninstall(prefix):
 
 
 def main(argv=None):
+    # Redirected Windows consoles may use an encoding that cannot represent a
+    # user path. Reporting must not turn a completed installation into failure.
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            reconfigure(errors="backslashreplace")
     parser = argparse.ArgumentParser(description="Install Salvage offline for the current user (Python 3.10+ required).")
     parser.add_argument("--prefix", type=Path, default=default_prefix(), help="installation prefix (default: %(default)s)")
     parser.add_argument("--uninstall", action="store_true", help="remove unchanged files managed by this installer")

@@ -51,7 +51,12 @@ class InstallerTests(unittest.TestCase):
     def run_launcher(self, *args):
         command = [str(self.launcher), *args]
         if os.name == "nt":
-            command = ["cmd.exe", "/d", "/c", str(self.launcher), *args]
+            # /s strips the explicit outer pair, retaining each quoted path.
+            # Passing this nested command as a list would add incompatible
+            # list2cmdline backslash escapes before the inner CMD quotes.
+            interpreter = os.environ.get("COMSPEC", "cmd.exe")
+            inner = " ".join('"' + str(value) + '"' for value in command)
+            command = '"' + interpreter + '" /d /s /c "' + inner + '"'
         return subprocess.run(command, cwd=self.cwd, env=self.env, capture_output=True, text=True, timeout=40)
 
     def test_real_install_recovery_reinstall_uninstall_with_unrelated_files(self):
@@ -77,6 +82,33 @@ class InstallerTests(unittest.TestCase):
         self.assertFalse((self.prefix / "share/salvage/salvage.pyz").exists())
         self.assertEqual(marker.read_text(), "preserve me")
         self.run_install("--uninstall")
+
+    def test_redirected_ascii_console_handles_unicode_paths(self):
+        prefix = self.root / "tools Ω with spaces"
+        code = ("import runpy,sys;"
+                "sys.stdout.reconfigure(encoding='ascii',errors='strict');"
+                "sys.stderr.reconfigure(encoding='ascii',errors='strict');"
+                "runpy.run_path(sys.argv.pop(1),run_name='__main__')")
+        command = [sys.executable, "-I", "-c", code, str(self.bundle / "install.py"),
+                   "--prefix", str(prefix)]
+        for extra in ([], ["--uninstall"]):
+            result = subprocess.run([*command, *extra], cwd=self.cwd, env=self.env,
+                                    capture_output=True, timeout=40)
+            self.assertEqual(result.returncode, 0, result.stderr.decode("ascii"))
+            self.assertIn(b"\\u03a9", result.stdout)
+            self.assertNotIn(b"UnicodeEncodeError", result.stderr)
+        self.assertFalse((prefix / "share/salvage/salvage.pyz").exists())
+        # Error paths must be printable under the same limited console too.
+        prefix.mkdir(parents=True, exist_ok=True)
+        (prefix / "bin").mkdir()
+        launcher = prefix / ("bin/salvage.cmd" if os.name == "nt" else "bin/salvage")
+        launcher.write_bytes(b"unmanaged")
+        failed = subprocess.run(command, cwd=self.cwd, env=self.env,
+                                capture_output=True, timeout=40)
+        self.assertEqual(failed.returncode, 1)
+        self.assertIn(b"\\u03a9", failed.stderr)
+        self.assertNotIn(b"UnicodeEncodeError", failed.stderr)
+        self.assertEqual(launcher.read_bytes(), b"unmanaged")
 
     def test_unmanaged_file_is_never_overwritten(self):
         self.launcher.parent.mkdir(parents=True)

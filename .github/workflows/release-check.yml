@@ -47,10 +47,10 @@ jobs:
         with:
           name: release-assets
           path: dist
-      - name: Unit tests and organizer references
-        run: |
-          python -m unittest discover -s tests -p 'test_*.py'
-          python tools/compare_expected.py
+      - name: Unit tests
+        run: python -m unittest discover -s tests -p 'test_*.py'
+      - name: Organizer references
+        run: python tools/compare_expected.py
       - name: Verify downloaded portable and installed packages
         run: python tools/check_release.py --dist dist --output validation-${{ matrix.proof }}.json
       - name: Measure damage recovery

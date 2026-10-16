@@ -343,3 +343,10 @@ derived from `samples/official/`. Dates are the working-session dates.
   advertised as an operating-system network sandbox. Docker uses --network none.
 * Initial local validation: 359 tests run (358 pass, one APFS filename skip),
   references 7/7. Platform jobs record independent evidence before publication.
+* The first Windows release check found that git archive converts text according
+  to core.autocrlf. Builder and verifier now read raw committed blobs, with
+  regressions for CRLF checkouts, binary data and export attributes. Installer
+  messages also escape characters unsupported by a redirected console so a
+  completed installation cannot fail while printing a Unicode path.
+* Unit tests and organizer references run as separate CI steps so a later
+  successful command cannot hide a failing test command on Windows.

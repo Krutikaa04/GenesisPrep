@@ -77,7 +77,7 @@ python3 tools/make_variants.py /tmp/deadbits-variants
 python3 tools/evaluate.py --variants /tmp/deadbits-variants --json /tmp/evaluation.json
 ```
 
-The release suite has **359 tests**. Release CI tests Windows/macOS with
+The release suite has **364 tests**. Release CI tests Windows/macOS with
 Python 3.12 and Linux with Python 3.10/3.12/3.14; platform-specific fixtures
 may skip where their filesystem feature is unavailable. The earlier M3 suite
 had 327 tests; its measured evidence is retained below. It covers reference fixtures, every-offset

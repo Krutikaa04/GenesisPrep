@@ -98,6 +98,36 @@ class ReleasePackagingTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "commit tracked changes"):
                 build.snapshot(repo)
 
+    @unittest.skipUnless(shutil.which("git"), "Git is required to verify committed source snapshots")
+    def test_snapshot_uses_raw_blobs_despite_checkout_and_archive_settings(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary)
+            git = lambda *args: subprocess.run(["git", "-C", str(repo), *args],
+                                               check=True, capture_output=True).stdout
+            git("init")
+            git("config", "user.name", "Release test")
+            git("config", "user.email", "release-test@example.invalid")
+            git("config", "core.autocrlf", "false")
+            (repo / ".gitattributes").write_bytes(b"ignored.txt export-ignore\nversion.txt export-subst\n")
+            (repo / "lines.txt").write_bytes(b"one\ntwo\n")
+            (repo / "ignored.txt").write_bytes(b"tracked and required\n")
+            (repo / "version.txt").write_bytes(b"$Format:%H$\n")
+            git("add", ".")
+            git("commit", "-m", "Raw snapshot fixture")
+            commit, canonical = build.snapshot(repo)
+            git("config", "core.autocrlf", "true")
+            git("config", "core.eol", "crlf")
+            for name in ("lines.txt", "ignored.txt", "version.txt", ".gitattributes"):
+                (repo / name).unlink()
+            git("checkout", "--", ".")
+            self.assertEqual((repo / "lines.txt").read_bytes(), b"one\r\ntwo\r\n")
+            other_commit, windows_settings = build.snapshot(repo)
+            self.assertEqual(other_commit, commit)
+            self.assertEqual(windows_settings, canonical)
+            self.assertEqual(windows_settings["lines.txt"][0], b"one\ntwo\n")
+            self.assertEqual(windows_settings["version.txt"][0], b"$Format:%H$\n")
+            self.assertIn("ignored.txt", windows_settings)
+
     def test_source_archive_retains_exact_tracked_content_and_modes(self):
         files = release_files()
         files["salvage"] = (b"#!/bin/sh\n", 0o755)

@@ -79,10 +79,13 @@ def safe_zip(data):
     archive = zipfile.ZipFile(io.BytesIO(data))
     seen = set()
     for member in archive.infolist():
-        name = member.filename
+        # ZipInfo normalizes Windows backslashes and strips NUL suffixes.
+        # Validate the actual stored name before accepting that normalization.
+        name = member.orig_filename
         path = PurePosixPath(name)
         require(name and not path.is_absolute() and ".." not in path.parts
-                and "\\" not in name and ":" not in name,
+                and "\\" not in name and ":" not in name and "\0" not in name
+                and name == member.filename,
                 "unsafe ZIP member: " + name)
         require(name not in seen, "duplicate ZIP member: " + name)
         seen.add(name)
@@ -201,9 +204,28 @@ def clean_environment():
     return env
 
 
-def command(argv, cwd, env=None):
-    result = subprocess.run([str(value) for value in argv], cwd=cwd,
+def windows_batch_command(argv, interpreter=None):
+    """Give CMD its explicit outer quotes without list2cmdline escaping them.
+
+    /s removes exactly the outer pair; inner quotes retain a batch path and
+    arguments containing spaces/Unicode. Windows filenames cannot contain '"'.
+    This helper receives only the checker's locally constructed command paths.
+    """
+    interpreter = interpreter or os.environ.get("COMSPEC", "cmd.exe")
+    values = [str(interpreter), *(str(value) for value in argv)]
+    require(all('"' not in value and "\n" not in value and "\r" not in value for value in values),
+            "invalid quoted Windows command argument")
+    inner = " ".join('"' + value + '"' for value in values[1:])
+    return '"' + values[0] + '" /d /s /c "' + inner + '"'
+
+
+def command(argv, cwd, env=None, input_data=None):
+    arguments = [str(value) for value in argv]
+    if os.name == "nt" and Path(arguments[0]).suffix.lower() in (".bat", ".cmd"):
+        arguments = windows_batch_command(arguments)
+    result = subprocess.run(arguments, cwd=cwd,
                             env=clean_environment() if env is None else env,
+                            input=input_data,
                             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                             timeout=180, check=False)
     require(result.returncode == 0,
@@ -234,9 +256,44 @@ def check_version_help(argv, cwd, version, env=None):
             and "output_dir" in result.stdout.decode("utf-8"), "--help lacks CLI usage")
 
 
+def committed_files(root):
+    """Read canonical blobs without checkout/archive EOL conversions.
+
+    git archive applies core.autocrlf and eol attributes. A Linux-produced
+    source artifact must instead match the same Git blob bytes on Windows.
+    """
+    tree = command(["git", "ls-tree", "-rz", "--full-tree", "HEAD"], root).stdout
+    entries = []
+    for item in tree.split(b"\0"):
+        if not item:
+            continue
+        metadata, name = item.split(b"\t", 1)
+        mode, kind, object_id = metadata.split()
+        require(kind == b"blob" and mode in (b"100644", b"100755"),
+                "source HEAD contains a non-regular file")
+        entries.append((name.decode("utf-8"), object_id))
+    object_ids = list(dict.fromkeys(object_id for _, object_id in entries))
+    raw = command(["git", "cat-file", "--batch"], root,
+                  input_data=b"\n".join(object_ids) + b"\n").stdout
+    offset, objects = 0, {}
+    for object_id in object_ids:
+        end = raw.find(b"\n", offset)
+        require(end >= 0, "incomplete Git blob header")
+        fields = raw[offset:end].split()
+        require(len(fields) == 3 and fields[0] == object_id and fields[1] == b"blob",
+                "invalid Git blob header")
+        size = int(fields[2])
+        offset = end + 1
+        require(size >= 0 and offset + size < len(raw)
+                and raw[offset + size:offset + size + 1] == b"\n", "incomplete Git blob")
+        objects[object_id] = raw[offset:offset + size]
+        offset += size + 1
+    require(offset == len(raw), "unexpected trailing Git blob data")
+    return {name: objects[object_id] for name, object_id in entries}
+
+
 def verify_source_snapshot(source_data, root, cwd):
-    result = command(["git", "archive", "--format=zip", "HEAD"], root)
-    expected = zip_files(result.stdout)
+    expected = committed_files(root)
     actual = zip_files(source_data)
     # The release archive can have one enclosing directory for convenient extraction.
     if "salvage" not in actual:
@@ -351,9 +408,6 @@ def verify(dist, root=ROOT):
         installed = custom / "bin" / ("salvage.cmd" if os.name == "nt" else "salvage")
         require(installed.is_file(), "installer did not create the user command")
         command_argv = [installed]
-        if os.name == "nt":
-            # Windows executes .cmd through cmd.exe; do not use shell=True with user paths.
-            command_argv = [os.environ.get("COMSPEC", "cmd.exe"), "/d", "/c", installed]
         check_version_help(command_argv, cwd, version)
         installed_out = work / "installed outputs"
         command([*command_argv, kit / "samples", installed_out], cwd)

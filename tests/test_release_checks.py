@@ -13,8 +13,9 @@ import zipfile
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 from check_release import (OFFLINE_GUARD, STATUSES, audit_python, digest, json_document,
-                           read_version, require_equal_outputs, safe_zip,
-                           validate_outputs, verify_checksums, verify_source_snapshot)
+                           committed_files, read_version, require_equal_outputs, safe_zip,
+                           validate_outputs, verify_checksums, verify_source_snapshot,
+                           windows_batch_command)
 
 
 def zip_data(entries):
@@ -22,6 +23,9 @@ def zip_data(entries):
     with zipfile.ZipFile(output, "w") as archive:
         for name, data in entries.items():
             info = zipfile.ZipInfo(name)
+            # Preserve intentionally hostile ZIP bytes even on Windows, where
+            # ZipInfo.__init__ otherwise replaces backslashes with '/'.
+            info.filename = info.orig_filename = name
             info.external_attr = (stat.S_IFREG | 0o755) << 16
             archive.writestr(info, data)
     return output.getvalue()
@@ -52,7 +56,7 @@ class ReleaseIntegrityTests(unittest.TestCase):
                     verify_checksums(directory, ["artifact"])
 
     def test_zip_rejects_traversal_absolute_windows_and_symlink_entries(self):
-        for name in ("../escape", "/absolute", "C:/drive", "folder\\escape"):
+        for name in ("../escape", "/absolute", "C:/drive", "folder\\escape", "file\0suffix"):
             with self.subTest(name=name), self.assertRaisesRegex(ValueError, "unsafe ZIP"):
                 safe_zip(zip_data({name: b"x"}))
         output = io.BytesIO()
@@ -64,12 +68,43 @@ class ReleaseIntegrityTests(unittest.TestCase):
             safe_zip(output.getvalue())
 
     def test_source_archive_must_equal_committed_content(self):
-        original = zip_data({"salvage": b"original"})
         changed = zip_data({"salvage-0.1/salvage": b"changed"})
-        result = subprocess.CompletedProcess([], 0, stdout=original, stderr=b"")
-        with tempfile.TemporaryDirectory() as temp, mock.patch("check_release.command", return_value=result):
+        with tempfile.TemporaryDirectory() as temp, mock.patch("check_release.committed_files",
+                                                              return_value={"salvage": b"original"}):
             with self.assertRaisesRegex(ValueError, "differs from HEAD: salvage"):
                 verify_source_snapshot(changed, ROOT, Path(temp))
+
+    def test_canonical_blobs_preserve_lf_binary_nuls_and_shared_content(self):
+        text_id, binary_id = b"a" * 40, b"b" * 40
+        text, binary = b"line1\nline2\n", b"\0\r\n\xff\n"
+        tree = (b"100644 blob " + text_id + b"\t.dockerignore\0"
+                + b"100755 blob " + text_id + b"\tsalvage\0"
+                + b"100644 blob " + binary_id + b"\tsamples/official/raw.dat\0")
+        batch = (text_id + b" blob " + str(len(text)).encode() + b"\n" + text + b"\n"
+                 + binary_id + b" blob " + str(len(binary)).encode() + b"\n" + binary + b"\n")
+        results = [subprocess.CompletedProcess([], 0, stdout=data, stderr=b"")
+                   for data in (tree, batch)]
+        with mock.patch("check_release.command", side_effect=results) as run:
+            files = committed_files(ROOT)
+        self.assertEqual(files, {".dockerignore": text, "salvage": text,
+                                 "samples/official/raw.dat": binary})
+        self.assertEqual(run.call_args_list[0].args[0],
+                         ["git", "ls-tree", "-rz", "--full-tree", "HEAD"])
+        self.assertEqual(run.call_args_list[1].kwargs["input_data"], text_id + b"\n" + binary_id + b"\n")
+
+    @unittest.skipUnless(__import__("shutil").which("git"), "Git needed for canonical blob regression")
+    def test_source_blob_comparison_ignores_autocrlf(self):
+        # Override configuration only for subprocesses; never change this repository's config.
+        from check_release import command as real_command
+        def crlf_command(argv, cwd, env=None, input_data=None):
+            if argv[0] == "git":
+                argv = ["git", "-c", "core.autocrlf=true", *argv[1:]]
+            return real_command(argv, cwd, env, input_data)
+        with mock.patch("check_release.command", side_effect=crlf_command):
+            files = committed_files(ROOT)
+        canonical = subprocess.check_output(["git", "show", "HEAD:.dockerignore"], cwd=ROOT)
+        self.assertEqual(files[".dockerignore"], canonical)
+        self.assertNotIn(b"\r\n", files[".dockerignore"])
 
     def test_import_audit_rejects_network_or_third_party_modules(self):
         self.assertEqual(audit_python({"main.py": b"import json\nfrom pathlib import Path\n"}),
@@ -91,6 +126,16 @@ class ReleaseIntegrityTests(unittest.TestCase):
             source.write_text("VERSION = '0.1.0-rc.1'\nraise RuntimeError('must not run')\n")
             self.assertEqual(read_version(source), "0.1.0-rc.1")
 
+    def test_windows_batch_paths_keep_inner_quotes_for_space_and_unicode_arguments(self):
+        result = windows_batch_command([r"C:\User tools ü\bin\salvage.cmd",
+                                        r"C:\input folder", r"C:\output folder"],
+                                       interpreter=r"C:\Windows\System32\cmd.exe")
+        self.assertEqual(result, '"C:\\Windows\\System32\\cmd.exe" /d /s /c '
+                                 '""C:\\User tools ü\\bin\\salvage.cmd" '
+                                 '"C:\\input folder" "C:\\output folder""')
+        with self.assertRaisesRegex(ValueError, "invalid quoted Windows"):
+            windows_batch_command(['bad"name.cmd'])
+
 
 class ReleaseOutputTests(unittest.TestCase):
     def setUp(self):
@@ -106,8 +151,10 @@ class ReleaseOutputTests(unittest.TestCase):
         self.inputs = {"test.dat": b"source bytes"}
 
     def write_outputs(self):
-        (self.directory / "test.dat.json").write_text(json.dumps(self.document) + "\n", encoding="utf-8")
-        (self.directory / "report.json").write_text(json.dumps(self.report) + "\n", encoding="utf-8")
+        # Contract fixtures use exact LF bytes on every OS; text-mode writes
+        # would create CRLF on Windows and mask the assertion being exercised.
+        (self.directory / "test.dat.json").write_bytes((json.dumps(self.document) + "\n").encode("utf-8"))
+        (self.directory / "report.json").write_bytes((json.dumps(self.report) + "\n").encode("utf-8"))
 
     def test_valid_contract_and_output_comparison(self):
         self.write_outputs()
