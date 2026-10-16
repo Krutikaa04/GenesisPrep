@@ -1,33 +1,154 @@
-# DeadBits - PS 02 Salvage
+# DeadBits — PS 02 Salvage
 
-Offline CLI that identifies legacy binary files from their bytes, decodes what is provably intact,
-and reports what was lost. Python 3 standard library only; no network, no AI/LLM at runtime.
+Offline recovery of damaged legacy binary files. One shared engine identifies
+formats from bytes, runs independent adapters, and writes recovered records
+with explicit uncertainty and damage evidence. Runtime and tests use Python's
+standard library only; no network or AI/LLM calls.
 
-## Build and run
+## Run
+
+Use Python 3.10 or later (validated with 3.12):
+
 ```bash
-make build                               # docker build -t deadbits .   (works offline)
-./salvage <input_dir> <output_dir>       # native; or: python -m deadbits.cli <input_dir> <output_dir>
-
-docker run --rm --network none -v "$PWD/in:/in" -v "$PWD/out:/out" deadbits /in /out
+./salvage <input_dir> <output_dir>
+# Equivalent native entry point:
+python -m deadbits.cli <input_dir> <output_dir>
+# Windows:
+salvage.bat <input_dir> <output_dir>
 ```
-Writes `<output_dir>/<input name>.json` for every file in `<input_dir>` (non-recursive, directories
-skipped) plus `report.json`. Always exits 0; every file is handled in isolation.
 
-## Formats
-LIBRA-98, LABLOG, VAULT, WKS, WPD (incl. encrypted -> `unsupported`), BRAVO, CVT (SEQ + VLIR),
-EBCDIC-DUMP, WAD, PAK. Everything else is `UNKNOWN` / `unrecognized`. Layouts, evidence and
-assumptions: [FORMAT-SPEC.md](FORMAT-SPEC.md); what was tried (incl. failures): [FIELD-LOG.md](FIELD-LOG.md).
+Input listing is nonrecursive; directories are skipped. Output contains
+`<full input basename>.json` for each processable input plus `report.json`.
+The CLI exits 0 even for damaged inputs or operational errors; inspect each
+status, damage entry, the combined report and stderr. Use different input and
+output directories to protect source files.
 
-## Tests
+Formats: LIBRA-98, LABLOG, VAULT, WKS, EBCDIC-DUMP, CVT (SEQ/VLIR), PAK, WAD,
+the kit's WordPerfect document profile, and BRAVO. Unknown structures remain
+`UNKNOWN` / `unrecognized`; encrypted WPD documents are `unsupported`.
+
+## Docker build and isolated run
+
+Preload the pinned base image on a connected machine (or transfer its saved
+image into an offline Docker installation):
+
 ```bash
-make test         # reference outputs, mutation hardening (truncate/flip/zero/junk every sample), CLI contract
-make reference    # our output vs the organizers' 7 reference files, with their matching rules
+docker pull python:3.12-slim@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1
+make build
+# Dockerfile RUN steps have networking disabled; no packages are installed.
+docker run --rm --network none -v "$PWD/in:/in:ro" -v "$PWD/out:/out" deadbits /in /out
 ```
-The mutation suite requires: no decoder exception, only contract values (status, damage kinds), bounded
-runtime, and no verified LIBRA/LABLOG record that is not in the original file.
 
-## Honest limits
-* PAK, WAD, WKS, VAULT, CVT, EBCDIC, WPD and BRAVO have no checksums: in-bounds value corruption cannot
-  be detected there (`verified` only means the structure is consistent).
-* Assumptions with no reference output (LIBRA flag bits 1-2, WPD soft hyphen, BRAVO paragraph rules,
-  CVT VLIR text) are listed in FORMAT-SPEC.md.
+Docker must already be running. `make docker-check PY=python3` builds with
+networking disabled, runs the container with `--network none`, a read-only root
+and dropped capabilities, and compares every output byte with a native run.
+It also checks the full output filename list. M3 validation produced **31
+byte-identical JSON files** for all 30 samples on native and isolated Docker
+runs, both locally and in [Linux CI](https://github.com/Krutikaa04/GenesisPrep/actions/runs/38855908310).
+No Docker dependency is needed
+for native operation.
+
+## Validate and measure
+
+```bash
+make test PY=python3
+make reference PY=python3
+make evaluate PY=python3
+# Optional persisted corpus; official samples remain unchanged:
+python3 tools/make_variants.py /tmp/deadbits-variants
+python3 tools/evaluate.py --variants /tmp/deadbits-variants --json /tmp/evaluation.json
+```
+
+The current suite has **327 tests** (all pass in Linux CI; one filesystem
+fixture skips on this macOS host). It covers reference fixtures, every-offset
+truncation, byte flips,
+compound damage, direct decoder safety, resource limits, filesystem failures,
+adapter discovery and evaluator accounting. Organizer comparison must remain
+**7/7**. GitHub CI repeats tests, reference comparison, evaluation and native /
+offline-container parity for `m3`, `master`, and pull requests into `master`.
+
+The measured [M3 evaluation ledger](reports/m3-evaluation.json) contains all
+30 sources and 180 variants: retain 10/50/90%, one byte short, midpoint byte
+corruption, and a centered zero block. Its 173 changed cases exclude seven
+no-ops from rates. There were **zero crashes**. Recovery counts matched record
+keys; complete records require every expected graded field to agree.
+
+Organizer references provide independent truth for seven sources:
+
+| Format | Changed cases | Recovered keys | Complete records | False verified | Crashes |
+|---|---:|---:|---:|---:|---:|
+| LIBRA-98 | 12 | 46/60 | 37/60 | 0 | 0 |
+| LABLOG | 6 | 87/132 | 81/132 | 0 | 0 |
+| VAULT | 6 | 9/18 | 7/18 | 2 | 0 |
+| WKS | 6 | 84/120 | 82/120 | 2 | 0 |
+| CVT | 6 | 5/6 | 1/6 | 1 | 0 |
+| EBCDIC-DUMP | 6 | 20/30 | 19/30 | 0 | 0 |
+| **Total** | **42** | **251/366 (68.6%)** | **227/366 (62.0%)** | **5** | **0** |
+
+Remaining recognized sources use verified pristine decoder output as a
+**regression baseline**, which does not independently prove accuracy:
+
+| Format | Changed cases | Recovered keys | Complete records | False verified | Crashes |
+|---|---:|---:|---:|---:|---:|
+| LIBRA-98 | 18 | 53/72 | 44/72 | 0 | 0 |
+| LABLOG | 12 | 183/282 | 181/282 | 0 | 0 |
+| VAULT | 12 | 17/36 | 11/36 | 1 | 0 |
+| WKS | 12 | 108/162 | 108/162 | 0 | 0 |
+| CVT | 5 | 12/15 | 10/15 | 0 | 0 |
+| EBCDIC-DUMP | 12 | 32/48 | 30/48 | 1 | 0 |
+| PAK | 6 | 13/24 | 13/24 | 1 | 0 |
+| WAD | 6 | 24/42 | 22/42 | 2 | 0 |
+| WPD | 12 | 36/48 | 29/48 | 0 | 0 |
+| BRAVO | 12 | 10/60 | 10/60 | 0 | 0 |
+| **Total** | **107** | **488/789 (61.9%)** | **458/789 (58.0%)** | **5** | **0** |
+
+Unknown originals stayed UNKNOWN in all 24 changed cases. Zero-record
+baselines have no recovery percentage. Original unverified records and optional
+partial reference records are excluded from recovery denominators. Truncation
+removes real bytes; these rates measure what survives this corpus, without
+predicting hidden-judge results. False verified cases in unchecksummed formats
+remain visible in the ledger, including archive payload hashes after corruption.
+
+## Extension and parallel ownership
+
+Copy `deadbits/formats/_template.py` to a public module with `NAME`,
+`detect(data)` and `decode(data, source_file)`. The engine discovers it without
+a shared registry edit. Keep private helpers prefixed `_`, require structural
+recognition evidence, bound all file-controlled work, and test damaged inputs.
+Adding a new format name still requires the integrator to extend the output
+contract's vocabulary deliberately.
+
+M1 owns LIBRA/LABLOG/EBCDIC; M2 owns VAULT/WKS/CVT; M3 owns archives, documents,
+platform and integration. Follow [AGENTS.md](AGENTS.md) and the full
+[project handoff](PROJECT-HANDOFF.txt), work on separate branches, and merge
+through a reviewed PR. Output contract keys, statuses and damage kinds remain
+unchanged. Layout facts and assumptions live in [FORMAT-SPEC.md](FORMAT-SPEC.md),
+experiments in [FIELD-LOG.md](FIELD-LOG.md).
+
+## Recovery and safety limits
+
+- Checksums can establish some integrity in LIBRA/LABLOG, with documented
+  collision/header limitations. Other formats have no full integrity checksum:
+  plausible in-bounds changes can remain undetected. `verified` there means
+  structural consistency. A computed SHA-256 describes selected bytes.
+- The file reader caps input at 128MiB and rejects symlinks/special files.
+  Legacy decoders have a conservative 2MiB ceiling; structural projections
+  further cap LABLOG/WKS/EBCDIC at 200,000/400,000/500,000 bytes. VAULT projected
+  work/output each cap at 16MiB. These policies can refuse a legitimate file;
+  refusals are explicit `failed` / `bad_length` results. Unknown-file metadata
+  analyzes at most the first 1MiB and says when it is sampled.
+- PAK/WAD recover at most 100,000 entries, with hash work at most four times
+  input size. WPD/BRAVO cap text at 8MiB and records at 100,000. Excluded data
+  is reported as loss; omitted hashes/text are never fabricated.
+- BRAVO has no magic: cut/missing-trailer files may remain unknown. Its optional
+  formatting-run layout remains unproved. WPD support follows the kit's header
+  profile; unimplemented function semantics are flagged rather than guessed.
+- Filesystem limits can make the required output impossible: names too long
+  after adding `.json`, names aliasing another output, or basename `report`
+  (including aliases of `report.json`) are explicitly failed in the combined
+  report. An unwritable output directory is reported to stderr, with exit 0.
+  Undecodable POSIX filename bytes are escaped losslessly in UTF-8 JSON.
+
+No third-party implementation is bundled; development-time WP5 sources and
+license context are recorded in [THIRD_PARTY.txt](THIRD_PARTY.txt). M3 completion
+and release evidence are recorded in [M3-SUMMARY.md](M3-SUMMARY.md).

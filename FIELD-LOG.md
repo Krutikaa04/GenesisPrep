@@ -299,3 +299,16 @@ derived from `samples/official/`. Dates are the working-session dates.
   Structural consistency cannot detect every plausible in-bounds corruption
   without an integrity checksum. This corpus does not predict hidden judging.
   Full measured ledger: reports/m3-evaluation.json; rerun tools/evaluate.py.
+
+* M3-6 release validation: 327 tests run on Python 3.12 (326 passed; one macOS filename
+  fixture skipped because APFS rejects invalid UTF-8 names); Linux CI passed
+  all 327 with no skip. Organizer references match 7/7. Native and Docker runs
+  over all 30 samples produced31 byte-identical JSON files under --network none,
+  a read-only root, dropped capabilities and an unprivileged user. The same
+  parity check also passed on the integrated origin/master baseline 9dc9754.
+* The pinned Python base was preloaded during development. Dockerfile RUN steps
+  build with networking disabled; runtime/tests introduce no network dependency.
+  GitHub workflow repeats tests, evaluation and isolated Docker parity.
+* Branch protection could not be enabled: the authenticated collaborator has
+  push access but GitHub reports admin:false/maintain:false. Reviewed-PR-only
+  workflow remains required; an owner must configure server-side enforcement.
