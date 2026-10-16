@@ -65,13 +65,94 @@ class Bravo(unittest.TestCase):
     def test_high_bytes_and_controls_are_never_guessed_as_latin1(self):
         for value in tuple(range(0x80, 0x100)) + (0, 1, 0x7F):
             data = document(b"Before\rA" + bytes((value,)) + b"B\rAfter\r")
-            self.assertEqual(bravo.detect(data), 0)
+            # The intact marker + trailer still identify the file, at lower confidence than clean text.
+            self.assertEqual(bravo.detect(data), 0.6)
             res = bravo.decode(data, "x")
             self.assertEqual(res.records[1]["text"], "A\ufffdB")
             self.assertFalse(res.records[1]["verified"])
             self.assertEqual(res.records[1]["issues"], ["invalid_value"])
-            self.assertTrue(all("verified" not in r for r in (res.records[0], res.records[2])))
+            self.assertNotIn("verified", res.records[0])
+            # Damaged bytes may have been CR delimiters, so later paragraph numbers are unprovable.
+            self.assertEqual(res.records[2]["text"], "After")
+            self.assertFalse(res.records[2]["verified"])
+            self.assertEqual(res.records[2]["issues"], ["invalid_value"])
             self.assertEqual(res.damage[0]["offset"], 8)
+
+    def test_damaged_text_with_intact_trailer_is_recovered_never_falsely_verified(self):
+        # Measured failures: a flipped byte or zeroed block mid-text used to make the whole file UNKNOWN.
+        for name in ("s16.bravo", "s17.bravo"):
+            clean = (SAMPLES / name).read_bytes()
+            truth = {r["index"]: r["text"] for r in salvage_bytes(clean, name).records}
+            flipped = bytearray(clean)
+            flipped[len(clean) // 2] ^= 0xFF
+            zeroed = bytearray(clean)
+            zeroed[56:88] = bytes(32)
+            for damaged in (flipped, zeroed):
+                res = salvage_bytes(bytes(damaged), name)
+                check_contract(self, res, len(damaged), name)
+                self.assertEqual((res.format, res.status), ("BRAVO", "partial"))
+                self.assertTrue(res.records)
+                for rec in res.records:
+                    if rec.get("verified", True):
+                        self.assertEqual(rec["text"], truth[rec["index"]])
+                self.assertTrue(any(not r.get("verified", True) for r in res.records))
+
+    def test_binary_with_eof_byte_and_trailer_lookalike_needs_mostly_text(self):
+        rng = random.Random(7)
+        accepted = 0
+        for _ in range(2000):
+            body = bytes(b for b in (rng.randrange(256) for _ in range(rng.randrange(8, 200))) if b != 0x1A)
+            data = body + b"\r\x1a" + TRAILER
+            text = sum(32 <= b < 127 or b in (9, 10, 13) for b in body + b"\r")
+            score = bravo.detect(data)
+            if text < 0.7 * (len(body) + 1):
+                self.assertEqual(score, 0.0)
+            accepted += score >= 0.5
+        self.assertLess(accepted, 20)
+
+    def test_truncated_files_are_recognised_and_complete_paragraphs_stay_verified(self):
+        clean = (SAMPLES / "s16.bravo").read_bytes()
+        truth = {r["index"]: r["text"] for r in salvage_bytes(clean, "s16.bravo").records}
+        marker = clean.index(b"\x1a")
+        found = 0
+        for keep in range(len(clean)):
+            data = clean[:keep]
+            res = salvage_bytes(data, "cut.bin")
+            check_contract(self, res, len(data), "cut.bin")
+            if res.format != "BRAVO":
+                self.assertEqual(res.format, "UNKNOWN")
+                continue
+            found += 1
+            # A trailer cut after its 4th byte still passes the clean-file recognition rules (known limit).
+            if keep < marker + 1 + 4:
+                self.assertEqual(res.status, "partial", keep)
+                self.assertIn("truncated", [d["kind"] for d in res.damage], keep)
+            for rec in res.records:
+                if rec.get("verified", True):
+                    self.assertEqual(rec["text"], truth[rec["index"]], keep)
+        # Everything with three CR-terminated paragraphs (offset 36 onward) is recognised until the trailer
+        # reaches the minimum length recognition accepts.
+        self.assertGreaterEqual(found, 100)
+
+    def test_cut_inside_trailer_reports_lost_trailer(self):
+        clean = (SAMPLES / "s17.bravo").read_bytes()
+        marker = clean.index(b"\x1a")
+        for keep in (marker + 1, marker + 2, marker + 3):
+            res = salvage_bytes(clean[:keep], "cut.bin")
+            self.assertEqual((res.format, res.status), ("BRAVO", "partial"))
+            self.assertEqual([r["text"] for r in res.records][-1], "Signed, the lab.")
+            self.assertTrue(all("verified" not in r for r in res.records))
+            self.assertEqual([d["kind"] for d in res.damage], ["truncated"])
+
+    def test_other_cr_free_or_line_oriented_text_is_still_not_bravo(self):
+        text = b"First paragraph here\rSecond paragraph here\rThird paragraph here\r"
+        self.assertEqual(bravo.detect(text), 0.55)                      # the documented trade-off
+        for data in (text.replace(b"\r", b"\r\n"), text.replace(b"\r", b"\n"), text[:30], b"a\rb\rc\r",
+                     text + b"\x89", text * 2000, b"plain text, not a legacy file\n"):
+            self.assertEqual(bravo.detect(data), 0.0, data[:20])
+        for name in ("s25_random.bin", "s26_empty.dat", "s27_notes.txt", "s28_tiny.dat", "s30_png_like.dat"):
+            data = (SAMPLES.parent / "samples" / name).read_bytes()
+            self.assertEqual(salvage_bytes(data, name).format, "UNKNOWN", name)
 
     def test_tabs_and_linefeeds_are_preserved_inside_cr_paragraphs(self):
         res = bravo.decode(document(b"First\tline\ncontinued\r"), "x")
@@ -79,7 +160,7 @@ class Bravo(unittest.TestCase):
         self.assertEqual(res.status, "ok")
 
     def test_unknown_trailer_does_not_invent_format_runs_or_damage(self):
-        for suffix in (b"", b"ASCII", bytes(range(256))):
+        for suffix in (b"ASCII", bytes(range(256))):
             res = bravo.decode(b"First\rSecond\r\x1a" + suffix, "x")
             self.assertEqual(res.metadata, {})
             self.assertEqual(res.damage, [])
