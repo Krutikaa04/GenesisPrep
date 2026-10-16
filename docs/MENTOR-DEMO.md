@@ -1,13 +1,14 @@
 # Guided mentor demo
 
-Issue #14 owns the new `deadbits/demo.py`, its orchestration tests, and this
-document. The shared CLI parser remains M3-owned. Run the standalone module now;
-`main(argv)` is available for the proposed `salvage --demo` delegation. This PR
-does not add that switch to `deadbits/cli.py` or change recovery/validation formats.
+The shared CLI delegates `--demo` to the same parser and orchestration as the
+standalone module. Both source and portable/installed applications support it;
+recovery and validation output formats remain unchanged.
 
 ```console
-python -m deadbits.demo --kit-dir /path/to/organizer-kit --source-dir /path/to/source-checkout --output-dir /path/to/new-demo
+salvage --demo --kit-dir /path/to/organizer-kit --source-dir /path/to/source-checkout --output-dir /path/to/new-demo
+salvage --demo --help
 python -m deadbits.demo --kit-dir /path/to/organizer-kit --output-dir /path/to/other-demo --guided
+python salvage-0.2.0-dev.pyz --demo --kit-dir /path/to/kit --source-dir /path/to/source-checkout --output-dir /path/to/portable-demo
 ```
 
 Both kit and output paths are explicit. The kit contains `samples/` and
@@ -57,10 +58,13 @@ Portable applications do not bundle these resources. Without it, those steps are
 unavailable and explain the source-kit option; references can still run from the
 explicit kit. A supplied source kit executes local tests/scoring code through
 the existing runners. Normal recovery is always a new execution.
-The current unittest module exposes `run_tests` rather than the dispatcher's
-`run(request)` bridge; the demo calls that public API directly and saves the
-schema envelope beside its artifacts. Reference and benchmark steps use the
-existing validation dispatcher. No runner implementation is duplicated.
+All three live validation steps use the existing dispatcher and its
+`run(request)` adapters. Discovery, test accounting, artifact persistence and
+benchmark scoring remain with their services; no runner is duplicated.
+Source suites must identify external source paths explicitly when asserting
+protection of those paths: the portable application's import root is its archive,
+not the selected checkout. A regression runs the existing protection assertion
+against a temporary copied source kit using the portable runtime.
 
 ## Live, saved, and skipped proof
 
@@ -81,6 +85,12 @@ Historical proof never silently falls back to a live measurement.
 `--skip-validation MODE` explicitly records a skipped step. It cannot combine
 with historical proof for the same mode. Skipped/unavailable steps do not turn
 into passes. New recoveries and any remaining live steps are separately labelled.
+
+`--demo` is mutually exclusive with recovery folders, version, doctor and the
+individual validation modes. Its own options are shown by `salvage --demo --help`;
+validation-only options such as `--evidence-dir` are rejected rather than ignored.
+The demo bundle uses `--output-dir`. A literal recovery folder named `--demo`
+can still follow the usual `--` separator.
 
 Exit 0 means every requested demonstration and validation step completed; exit 1
 means a step failed or an operational error occurred; exit 2 is invalid CLI usage;
@@ -106,7 +116,7 @@ The output tree contains:
 
 `run_demo(kit_dir=..., output_dir=..., source_dir=None, historical=None,
 skip_validation=(), guided=False, stream=None, input_stream=None)` returns the
-manifest. The injectable streams support a future parser delegation and tests;
+manifest. The injectable streams support the shared parser delegation and tests;
 the function uses the real shared recovery and validation services. An operational
 failure can leave partial artifacts; use a fresh directory for retry.
 

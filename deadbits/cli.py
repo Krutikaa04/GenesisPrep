@@ -102,11 +102,13 @@ def _parser():
         description="Offline legacy recovery and validation evidence. Recovery lists inputs nonrecursively "
                     "and writes <input name>.json plus report.json. Use distinct input/output folders; "
                     "inspect statuses, damage and stderr for losses.",
-        epilog="Recovery always exits 0. Validation: 0 complete, 1 failed, 2 usage, 3 unavailable.")
+        epilog="Recovery always exits 0. Demo/validation: 0 complete, 1 failed, 2 usage, 3 unavailable.")
     parser.add_argument("input_dir", nargs="?", type=Path)
     parser.add_argument("output_dir", nargs="?", type=Path)
     modes = parser.add_mutually_exclusive_group()
     modes.add_argument("--version", action="store_true", help="show the application version")
+    modes.add_argument("--demo", action="store_true",
+                       help="run the mentor walkthrough; use --demo --help for options")
     for mode, help_text in (("doctor", "inspect interpreter, adapters and local resources"),
                             ("verify", "compare organizer references"),
                             ("test", "execute an explicitly selected source test suite"),
@@ -125,9 +127,23 @@ def _parser():
 
 def main(argv=None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
+    # Delegate the complete demo grammar rather than duplicating its options.
+    # Tokens after -- are literal recovery paths, including a folder named --demo.
+    option_end = argv.index("--") if "--" in argv else len(argv)
+    if "--demo" in argv[:option_end]:
+        from .demo import main as demo_main
+        position = argv.index("--demo")
+        try:
+            return demo_main(argv[:position] + argv[position + 1:], prog="salvage --demo")
+        except SystemExit as exc:
+            return exc.code or 0
+        except Exception as exc:
+            from . import presentation
+            presentation.emit("salvage: demo error: %s: %s" % (type(exc).__name__, exc), sys.stderr)
+            return 1
     parser = _parser()
     # Recovery retains its historical zero exit even on usage/operational failure.
-    validation_requested = any(arg.split("=", 1)[0] in {"--doctor", "--verify", "--test", "--benchmark"}
+    validation_requested = any(arg.split("=", 1)[0] in {"--doctor", "--verify", "--test", "--benchmark", "--demo"}
                                for arg in argv[:argv.index("--") if "--" in argv else len(argv)])
     try:
         args = parser.parse_args(argv)

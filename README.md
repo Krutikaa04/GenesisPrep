@@ -75,6 +75,11 @@ Validation exits are distinct from recovery's always-zero behavior. See
 [CLI modes and runner integration](docs/CLI-MODES.md) for paths, examples,
 exit codes and evidence protection.
 
+Run the mentor walkthrough with
+`./salvage --demo --kit-dir /path/to/kit --source-dir /path/to/source --output-dir /tmp/demo-proof`.
+The same flag works in the portable/installed app; `--demo --help` lists guided,
+historical-evidence and skip options. See the [mentor demo](docs/MENTOR-DEMO.md).
+
 ## Docker build and isolated run
 
 Preload the pinned base image on a connected machine (or transfer its saved

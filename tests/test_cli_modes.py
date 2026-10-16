@@ -42,6 +42,13 @@ class Modes(unittest.TestCase):
             self.assertEqual(set(json.loads((dst / 'sample.dat.json').read_text())),
                              {'source_file', 'format', 'status', 'metadata', 'records', 'damage'})
 
+    def test_demo_token_after_separator_is_a_literal_recovery_folder(self):
+        report = {"files": [], "totals": {"ok": 0}}
+        with mock.patch.object(cli, 'run', return_value=report) as recover:
+            code, _, err = invoke(['--', '--demo', 'output'])
+        self.assertEqual(code, 0, err)
+        recover.assert_called_once_with(Path('--demo'), Path('output'))
+
     def test_usage_exit_codes(self):
         for args, expected in [([], 0), (['one'], 0), (['--wat'], 0),
                 (['--verify', '--test'], 2), (['--test', '--wat'], 2),

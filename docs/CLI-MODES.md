@@ -53,6 +53,16 @@ there; `validation.json` is reserved for the CLI envelope. Failed runs may leave
 partial artifacts; use a fresh directory for retry. Evidence paths are not
 commands and are never shell-expanded.
 
+## Mentor walkthrough
+
+`salvage --demo` delegates to the [demo parser](MENTOR-DEMO.md), including its
+required `--kit-dir` and fresh `--output-dir`, optional `--source-dir`, guided
+mode, selected historical evidence and skipped steps. `--demo --help` shows its
+full options; the shared help advertises the entry point. Other modes and
+recovery positionals cannot combine with it. Demo exits use the same 0/1/2/3
+completion/failure/usage/unavailable meanings; explicit skipped steps exit 3.
+Options after `--` remain literal recovery folder names, even `--demo`.
+
 ## Integration boundary for issues #10, #11 and #12
 
 All three services now implement this boundary: [references](REFERENCE-RUNNER.md),

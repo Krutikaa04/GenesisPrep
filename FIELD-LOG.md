@@ -460,3 +460,28 @@ derived from `samples/official/`. Dates are the working-session dates.
   The first failed protection check created a new-proof directory under the
   local official kit; removed exactly its six generated artifacts and empty
   directories, restoring the fixture tree. No tracked official bytes changed.
+
+## 2026-10-16 — M3 portable demo validation and shared entry point
+
+* Started codex/demo-portable-integration from master 9033c48. Fixed the
+  source-protection test's checkout-location assumption by explicitly selecting
+  ROOT when asserting protection of that external kit. The assertion remains;
+  a portable app cannot infer an unrelated test checkout from its archive path.
+* Added a portable-runtime regression that copies support sources/scorers into
+  a temporary external kit and executes the existing protection assertion.
+  It confirms archive imports, immutable source contents and no demo-proof
+  output. Any future failed protection test stays inside temporary data rather
+  than attempting to write into the real workspace or official fixtures.
+* Added salvage --demo by delegating the original arguments to the existing
+  demo parser; no second option grammar. Help, guided mode, historical/skip
+  selections and exit status remain with that parser. Mixed modes/unknown
+  options are usage errors; -- preserves literal recovery folder names.
+* Demo live tests now use the same dispatcher/adapter as reference and benchmark
+  steps, replacing the pre-#13 direct service workaround. No decoder, recovery
+  contract, source-kit inference or application version change.
+* Focused demo checks pass (15 tests), including real shared CLI execution,
+  immutable generated copies, failure/skip/history propagation, parser conflicts
+  and portable external-source protection.
+* Ordinary Python 3.12 discovery passes all 489 tests (one platform filesystem
+  skip), with organizer comparison still 7/7. Literal --demo recovery paths,
+  shared help/usage and legacy recovery output remain covered.
