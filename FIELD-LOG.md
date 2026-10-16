@@ -380,3 +380,13 @@ derived from `samples/official/`. Dates are the working-session dates.
 * Final usage review added malformed boolean-mode assignments (for example,
   --verify=true) to diagnostic usage-error handling: exit 2 rather than legacy
   recovery's exit 0. Existing recovery usage semantics are retained.
+
+## 2026-10-16 — M3 prerequisite: fresh source-test execution
+
+* Issue #10's full-suite check exposed an existing #11 false-pass risk: a
+  same-size rewrite inside one timestamp tick could reuse cached passing test
+  code. This is a runner correctness defect, not a reason to skip/weaken tests.
+* Give each worker a fresh temporary PYTHONPYCACHEPREFIX, bypassing existing
+  caches without altering sources or global interpreter configuration. Added a
+  known-answer regression seeding stale passing bytecode, rewriting a failing
+  source at the same size/timestamp, and requiring the current failure outcome.

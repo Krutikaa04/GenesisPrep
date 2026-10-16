@@ -29,6 +29,11 @@ with that application; the runner does not install or replace application code.
 The child uses the test directory's parent as its working directory. Fixture
 resources must accompany the source kit. Re-entering an active selection is
 refused; different nested synthetic suites remain supported, with a depth limit.
+Each worker uses a fresh temporary Python bytecode-cache prefix, so existing
+`.pyc` files cannot hide same-size source edits with unchanged timestamps. The
+cache is removed with the worker's temporary directory. This does not alter
+source files or the caller's interpreter settings.
+
 The default timeout is 300 seconds; adjust `--timeout` for larger suites.
 
 Each invocation writes three separate validation artifacts:
