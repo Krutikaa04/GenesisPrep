@@ -1,7 +1,7 @@
 # Release 0.1: preparation and submission
 
-Release work is isolated on release/0.1, based on reviewed master commit
-967946575443358c4a2174cea960d79eac167f2e. Preparing tags and GitHub releases
+Release work is isolated on release/0.1, incorporating reviewed master commit
+709b5a7a044821f3f039aec2a693fa84574f6781 (including PR #5). Preparing tags and GitHub releases
 from this branch does not merge packaging changes into master. Local/remote
 master refs are checked separately before and after publication.
 
@@ -67,8 +67,9 @@ uploaded packages are the bytes exercised by the platform jobs.
 The required ./salvage input_dir output_dir entry point, Docker build command,
 JSON shapes/statuses/damage vocabulary and offline behavior remain intact.
 Report-row operational notes have moved to stderr to keep only required keys.
-No decoder, official fixture, format vocabulary or graded field layout is
-changed for packaging. README.md and FORMAT-SPEC.md document all limits:
+Packaging does not alter format decoders, official fixtures, format vocabulary
+or graded field layouts. The release includes the separately reviewed PR #5
+VAULT/WKS verification changes. README.md and FORMAT-SPEC.md document all limits:
 
 - Ten format families are supported within the sample-backed profiles. WPD
   unseen semantics/character tables and BRAVO formatting runs remain unproved.

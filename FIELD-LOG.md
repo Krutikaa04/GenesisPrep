@@ -350,3 +350,18 @@ derived from `samples/official/`. Dates are the working-session dates.
   completed installation cannot fail while printing a Unicode path.
 * Unit tests and organizer references run as separate CI steps so a later
   successful command cannot hide a failing test command on Windows.
+* While release validation ran, reviewed PR #5 was merged by another contributor
+  into master (709b5a7). It is incorporated into release/0.1 so the release
+  includes those VAULT/WKS verification improvements. This integration changes
+  only the release branch; the contributor's master merge is retained.
+* False-verified sweep (from reports/m3-evaluation.json, 10 cases). Fixed 5: VAULT text that is not valid UTF-8
+  (flipped byte or zeroed RLE data inside a size-preserving block; text is UTF-8, confirmed on s09) is now
+  unverified + invalid_value; WKS formulas not ending in the 0x03 terminator token (all kit formulas do) and
+  non-ASCII labels (latin-1 is an assumption) are unverified + invalid_value. Not fixable, kept visible: CVT 0xCF
+  flipped to 0x30 reads as a valid "0"; PAK/WAD payload hashes (no stored hash or checksum); EBCDIC pad byte
+  flipped to a valid cp037 character (accented letters are legitimately allowed). Organizer-reference false
+  verified 5 -> 1, regression baseline 5 -> 4.
+* Windows Python reports subprocess audit events with a serialized command and
+  an optional executable field. The release checker permits only the exact
+  installer self-check command on both platforms; other child commands remain
+  blocked. A regression exercises both event representations.

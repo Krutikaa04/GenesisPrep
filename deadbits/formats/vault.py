@@ -192,7 +192,11 @@ def decode(data: bytes, name: str) -> Result:
             try:
                 rec["text"] = decoded.decode("utf-8")
             except UnicodeDecodeError:
+                # Text entries are UTF-8 (confirmed on s09), so invalid UTF-8 means the payload is damaged;
+                # the cp437 rendering is a best-effort view, never verified.
                 rec["text"] = decoded.decode("cp437")
+                if ok:
+                    flag("invalid_value", boff, "text of entry %d is not valid UTF-8 (corrupted payload)" % eid)
         elif typ == 2 and len(decoded) >= 2:
             rec["width"], rec["height"] = decoded[0], decoded[1]
             if ok and len(decoded) != 2 + decoded[0] * decoded[1]:

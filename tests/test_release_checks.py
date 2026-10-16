@@ -12,7 +12,7 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
-from check_release import (OFFLINE_GUARD, STATUSES, audit_python, digest, json_document,
+from check_release import (INSTALLER_SELF_CHECK, OFFLINE_GUARD, STATUSES, audit_python, digest, json_document,
                            committed_files, read_version, require_equal_outputs, safe_zip,
                            validate_outputs, verify_checksums, verify_source_snapshot,
                            windows_batch_command)
@@ -119,6 +119,29 @@ class ReleaseIntegrityTests(unittest.TestCase):
                                  + "import socket;socket.socket()"], capture_output=True)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn(b"release offline check blocked: socket.__new__", result.stderr)
+
+    def test_offline_guard_accepts_only_registered_probe_for_windows_and_posix_events(self):
+        expected = [r"C:\Python space\python.exe", "-I", "-c", INSTALLER_SELF_CHECK,
+                    r"C:\bundle ü\salvage.pyz"]
+        serialized = subprocess.list2cmdline(expected)
+        namespace = {"_salvage_allowed_process": (expected, serialized)}
+        # Test audit event handling without permanently registering a hook in
+        # this test process. Real socket denial is separately tested above.
+        with mock.patch.object(sys, "addaudithook"):
+            exec(OFFLINE_GUARD, namespace)
+        check = namespace["reject_network"]
+        check("subprocess.Popen", (None, serialized, None, None))
+        check("subprocess.Popen", (expected[0], expected, None, None))
+        for executable, actual in (("curl.exe", serialized),
+                                   (None, serialized + " unexpected"),
+                                   (None, subprocess.list2cmdline([*expected[:3], "print('different')", expected[4]])),
+                                   (None, subprocess.list2cmdline([*expected[:4], r"C:\other\salvage.pyz"]))):
+            with self.subTest(executable=executable, actual=actual):
+                with self.assertRaisesRegex(RuntimeError, "blocked external process"):
+                    check("subprocess.Popen", (executable, actual, None, None))
+        namespace.pop("_salvage_allowed_process")
+        with self.assertRaisesRegex(RuntimeError, "blocked external process"):
+            check("subprocess.Popen", (None, serialized, None, None))
 
     def test_version_is_read_as_data_without_executing_source(self):
         with tempfile.TemporaryDirectory() as temp:

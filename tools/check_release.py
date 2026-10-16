@@ -30,13 +30,27 @@ ADAPTERS = {"libra98", "lablog", "vault", "wks", "wpd", "bravo", "cvt",
             "ebcdic_dump", "wad", "pak"}
 NETWORK_MODULES = {"socket", "urllib", "http", "ftplib", "smtplib", "imaplib",
                    "poplib", "telnetlib", "xmlrpc", "webbrowser"}
+INSTALLER_SELF_CHECK = (
+    "import sys; sys.path.insert(0, sys.argv[1]); "
+    "from deadbits.version import VERSION; "
+    "from deadbits.engine import ADAPTERS; import json; "
+    "print(json.dumps({'version':VERSION,'adapters':sorted(m.NAME for m in ADAPTERS)}))")
 OFFLINE_GUARD = """import sys
 def reject_network(event, args):
     if event.startswith('socket.') or event == 'os.system':
         raise RuntimeError('release offline check blocked: ' + event)
     if event == 'subprocess.Popen':
-        # The installer may launch only its isolated local-Python self-check.
-        if args[0] != sys.executable or args[1][:3] != [sys.executable, '-I', '-c']:
+        # POSIX reports argv; Windows reports a serialized command and can
+        # report executable=None. Accept only the complete registered probe.
+        allowed = globals().get('_salvage_allowed_process')
+        matched = False
+        if allowed is not None and args[0] in (None, allowed[0][0]):
+            actual = args[1]
+            if isinstance(actual, (list, tuple)):
+                matched = list(actual) == allowed[0]
+            elif isinstance(actual, str):
+                matched = actual == allowed[1]
+        if not matched:
             raise RuntimeError('release offline check blocked external process')
 sys.addaudithook(reject_network)
 """
@@ -241,8 +255,13 @@ def source_command(root, args):
     return [sys.executable, "-I", "-c", code, root, *args]
 
 
-def guarded_script(path):
-    code = OFFLINE_GUARD + "import runpy;runpy.run_path(sys.argv.pop(1),run_name='__main__')"
+def guarded_script(path, allow_installer_probe=False):
+    registration = ""
+    if allow_installer_probe:
+        argv = [sys.executable, "-I", "-c", INSTALLER_SELF_CHECK,
+                str(Path(path).resolve().parent / "salvage.pyz")]
+        registration = "_salvage_allowed_process = " + repr((argv, subprocess.list2cmdline(argv))) + "\n"
+    code = registration + OFFLINE_GUARD + "import runpy;runpy.run_path(sys.argv.pop(1),run_name='__main__')"
     return [sys.executable, "-I", "-c", code, path]
 
 
@@ -403,7 +422,7 @@ def verify(dist, root=ROOT):
         proof["reference_matches"] = len(references)
         proof["checks"].append("strict JSON contract and all seven organizer references")
         custom = work / "installation with spaces ü"
-        install_cmd = guarded_script(bundle / "install.py")
+        install_cmd = guarded_script(bundle / "install.py", allow_installer_probe=True)
         command([*install_cmd, "--prefix", custom], cwd)
         installed = custom / "bin" / ("salvage.cmd" if os.name == "nt" else "salvage")
         require(installed.is_file(), "installer did not create the user command")

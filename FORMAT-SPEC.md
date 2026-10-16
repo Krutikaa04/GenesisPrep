@@ -179,7 +179,7 @@ unverified. s07 contains one deliberately corrupted block.
 **Damage policy (M2, assumptions marked).** The index `size` is the only integrity check, so a record is `verified`
 only when its block header matches the entry, the block is inside the file and outside the index table, the decoded
 length equals `size`, the name is printable and (text entries) the text has no control characters other than
-TAB/LF/CR. A length mismatch keeps the record but omits `sha256` (a hash of a payload of the wrong length cannot
+TAB/LF/CR and is valid UTF-8 (invalid UTF-8 is kept as a cp437 view, unverified, `invalid_value`). A length mismatch keeps the record but omits `sha256` (a hash of a payload of the wrong length cannot
 match). `names_off` outside the file is one `oob_pointer`; the records keep their content with `name: null`. Index
 lost (`index_off` outside the file) -> `failed` + `index_missing`, nothing salvaged: type, flags and names live only
 in the index (assumption: unreferenced `BL` blocks are not scanned, a record built that way would be a guess).
@@ -194,6 +194,10 @@ settings/named-range records that are skipped silently. Anything else -> `unknow
 Confirmed: all of the above on s11 expected. **Assumptions:** a cell written twice keeps its last value;
 `number_format`/`iso_date` are emitted only for special (0x7x date/time) formats because the s11
 reference carries none for currency cells; Lotus date serial 1 = 1900-01-01; serial 60 represents the non-existent 1900-02-29 due to the 1900 leap-year bug, so no ISO date is emitted for serial 60.
+
+**Verification of cell content (assumptions).** A formula whose token stream does not end in the 0x03 terminator
+(every kit formula does) and a label with non-ASCII bytes (latin-1 decoding is itself an assumption) are kept
+but `verified:false` + `invalid_value`.
 
 **Damage policy (M2).** The stream has no resync marker, so every record is checked against the layout. A known
 opcode with a wrong length is repaired only when a strict chain of valid records follows at the known length

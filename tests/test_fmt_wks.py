@@ -29,7 +29,7 @@ def blank(col, row, fmt=0xFF):
     return rec(0x0C, struct.pack("<BHH", fmt, col, row))
 
 
-def formula(col, row, cached, tokens=b"\x00\x01", fmt=0xFF):
+def formula(col, row, cached, tokens=b"\x0b\x03", fmt=0xFF):
     return rec(0x10, struct.pack("<BHHdH", fmt, col, row, cached, len(tokens)) + tokens)
 
 
@@ -62,10 +62,24 @@ class WksBuilt(Base):
         self.assertEqual([r["cell"] for r in res.records], ["A1", "A2", "B2", "C2", "D2"])
         self.assertEqual(self.cell(res, "A1")["alignment"], "left")
         self.assertEqual(self.cell(res, "C2")["cached_value"], 9.5)
-        self.assertEqual(self.cell(res, "C2")["formula_raw_hex"], "0001")
+        self.assertEqual(self.cell(res, "C2")["formula_raw_hex"], "0b03")
         self.assertEqual(res.metadata["version_code"], "0x0404")
         self.assertEqual(res.metadata["declared_range"], "A1:D6")
         self.assertEqual(res.metadata["column_widths"], {"A": 12})
+
+    def test_formula_without_terminator_token_is_unverified(self):
+        res = self.run_(sheet(formula(0, 0, 9.5, tokens=b"\x00\x00")))
+        cell = self.cell(res, "A1")
+        self.assertIs(cell["verified"], False)
+        self.assertEqual(cell["issues"], ["invalid_value"])
+        self.assertEqual((res.status, self.kinds(res)), ("partial", ["invalid_value"]))
+
+    def test_non_ascii_label_is_unverified_but_kept(self):
+        res = self.run_(sheet(label(0, 0, "W\xa8shers")))
+        cell = self.cell(res, "A1")
+        self.assertEqual(cell["value"], "W\xa8shers")
+        self.assertIs(cell["verified"], False)
+        self.assertEqual(res.status, "partial")
 
     def test_label_alignment_prefixes(self):
         res = self.run_(sheet(*[label(i, 0, "x", prefix=p) for i, p in enumerate("'\"^\\")]))

@@ -259,6 +259,17 @@ class VaultBuilt(Base):
         res = self.run_(build([dict(id=1, type=1, flags=0, name="t.txt", data=b"ok\x01\x02text")]))
         self.assertFalse(res.records[0]["verified"])
 
+    def test_invalid_utf8_text_is_kept_but_unverified(self):
+        res = self.run_(build([dict(id=1, type=1, flags=0, name="t.txt", data=b"Sig\x98ned")]))
+        rec = res.records[0]
+        self.assertFalse(rec["verified"])
+        self.assertEqual(rec["issues"], ["invalid_value"])
+        self.assertEqual((res.status, [d["kind"] for d in res.damage]), ("partial", ["invalid_value"]))
+
+    def test_valid_non_ascii_utf8_text_stays_verified(self):
+        res = self.run_(build([dict(id=1, type=1, flags=0, name="t.txt", data="caf\u00e9".encode())]))
+        self.assertEqual((res.status, res.records[0]["text"]), ("ok", "caf\u00e9"))
+
     def test_tab_newline_cr_in_text_are_fine(self):
         res = self.run_(build([dict(id=1, type=1, flags=0, name="t.txt", data=b"a\tb\r\nc")]))
         self.assertEqual(res.status, "ok")
@@ -296,6 +307,19 @@ class VaultSamples(Base):
                 for rec in self.run_(bytes(b), p.name).records:
                     if rec.get("verified", True):
                         self.assertIn("sha256", rec)
+
+    def test_damaged_text_payload_inside_a_compressed_block_is_never_verified(self):
+        # Measured false-verified cases (reports/m3-evaluation.json): size still matched, text was garbage.
+        raw = (SAMPLES / "s08.dat").read_bytes()
+        flipped = bytearray(raw)
+        flipped[153] ^= 0xFF
+        zeroed = bytearray(raw)
+        zeroed[137:169] = bytes(32)
+        for damaged in (flipped, zeroed):
+            res = self.run_(bytes(damaged), "s08.dat")
+            report = [r for r in res.records if r["name"] == "report.txt"][0]
+            self.assertFalse(report["verified"])
+            self.assertEqual(res.status, "partial")
 
     def test_kit_files_still_ok(self):
         for p in self.files():
