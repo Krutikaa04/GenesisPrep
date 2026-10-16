@@ -1,0 +1,7 @@
+__pycache__/
+*.py[cod]
+.venv/
+.docker-check.*/
+/out/
+/variants/
+/evaluation.json
