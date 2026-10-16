@@ -283,3 +283,19 @@ derived from `samples/official/`. Dates are the working-session dates.
   the first result is preserved and later conflicts are explicitly failed.
   Tests cover both filesystem case policies and an output alias introduced
   between sibling writes.
+
+* M3-5 evaluation: deterministic 10/50/90% truncation, one-byte-short,
+  midpoint XOR and centered zero-block variants cover all 30 samples. The
+  persisted manifest records hashes/parameters and rejects altered variants.
+  Seven organizer references are scored independently; remaining recognized
+  samples use verified pristine output as a clearly labeled regression baseline.
+* Measured 180 variants, 173 changed and 7 no-ops (excluded from summary rates),
+  zero decoder crashes. Organizer-reference recovery: 251/366 keys, 227/366
+  complete records, five false verified records. Regression-only: 488/789 keys,
+  458/789 complete records, five false verified. Unknown originals stayed
+  UNKNOWN in all 24 changed cases; zero-record recovery rates are null.
+* False verified cases are visible rather than hidden: reference cases are
+  CVT/VAULT/WKS; regression cases include EBCDIC/VAULT and archive payload hashes.
+  Structural consistency cannot detect every plausible in-bounds corruption
+  without an integrity checksum. This corpus does not predict hidden judging.
+  Full measured ledger: reports/m3-evaluation.json; rerun tools/evaluate.py.
