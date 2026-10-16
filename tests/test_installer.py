@@ -39,9 +39,9 @@ class InstallerTests(unittest.TestCase):
         self.launcher = self.prefix / ("bin/salvage.cmd" if os.name == "nt" else "bin/salvage")
 
     def run_install(self, *args, success=True, env=None):
-        completed = subprocess.run([sys.executable, "-I", str(self.bundle / "install.py"),
+        completed = subprocess.run([sys.executable, "-I", "-X", "utf8", str(self.bundle / "install.py"),
                                     "--prefix", str(self.prefix), *args], cwd=self.cwd,
-                                   env=env or self.env, capture_output=True, text=True, timeout=40)
+                                   env=env or self.env, capture_output=True, encoding="utf-8", timeout=40)
         if success:
             self.assertEqual(completed.returncode, 0, completed.stderr)
         else:
