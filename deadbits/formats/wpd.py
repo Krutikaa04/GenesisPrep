@@ -17,6 +17,9 @@ MAX_RECORDS = 100_000
 MAX_TEXT_BYTES = 8 * 1024 * 1024
 # Format facts, independently implemented from the WP5 framing description.
 _FIXED_WIDTHS = (4, 9, 11, 3, 3, 5, 6, 7, 4, 5, 6, 6, 8, 10, 10, 12)
+# D0 subgroups with only old/new layout values, never embedded document text.
+# Facts and source revision are recorded in FORMAT-SPEC.md (issue #18).
+_PAGE_LAYOUT_BYTES = {0x01: 8, 0x02: 4, 0x05: 8, 0x06: 2}
 
 
 def detect(data: bytes) -> float:
@@ -35,6 +38,16 @@ def _fn_len(code: int, data: bytes, pos: int):
     if 0xD0 <= code <= 0xFF and pos + 4 <= len(data):
         return 4 + struct.unpack_from("<H", data, pos + 2)[0]
     return None
+
+
+def _known_page_layout(data: bytes, pos: int, length: int) -> bool:
+    """Called only after mirrored framing has passed inside the text budget."""
+    subgroup = data[pos + 1]
+    payload_size = _PAGE_LAYOUT_BYTES.get(subgroup)
+    if payload_size is None or length != payload_size + 8:
+        return False
+    # WP5 has five justification values; other values are not established.
+    return subgroup != 0x06 or (data[pos + 4] <= 4 and data[pos + 5] <= 4)
 
 
 def decode(data: bytes, name: str) -> Result:
@@ -112,7 +125,7 @@ def decode(data: bytes, name: str) -> Result:
             stop_at_limit()
             break
         b = data[pos]
-        if b == 0x0A:
+        if b in (0x0A, 0x8C, 0x90, 0x99):
             flush()
             pos += 1
         elif b == 0x0C:
@@ -123,17 +136,20 @@ def decode(data: bytes, name: str) -> Result:
                 break
             flush("page_break")
             pos += 1
-        elif b in (0x0B, 0x0D, 0xA0):
+        elif b in (0x0B, 0x0D, 0x93, 0x94, 0x95, 0xA0):
             paragraph.append(" ")
             pos += 1
         elif b == 0x09:
             paragraph.append("\t")
             pos += 1
-        elif b == 0xA9:
+        elif b in (0xA9, 0xAB):
             paragraph.append("-")
             pos += 1
         elif b == 0xAA:
             pos += 1  # Retained kit assumption: discretionary hyphen is dropped.
+        elif b in (0xAC, 0xAD, 0xAE):
+            paragraph.append("\u00ad")  # Preserve an encoded soft hyphen, not a guessed visible break.
+            pos += 1
         elif 0x20 <= b < 0x7F:
             paragraph.append(chr(b))
             pos += 1
@@ -165,10 +181,17 @@ def decode(data: bytes, name: str) -> Result:
                     flush(extra_issue=kind)
                 break
             if b == 0xC0:
-                # Extended-character tables are not established by the kit.
-                paragraph.append("\ufffd")
-                issues.add("unknown_record")
-                res.add_damage("unknown_record", pos, "extended WordPerfect character is unsupported", True)
+                character, charset = data[pos + 1:pos + 3]
+                if charset == 0 and 0x20 <= character < 0x7F:
+                    paragraph.append(chr(character))
+                else:
+                    # No vendor tables or substitution with an invented space.
+                    paragraph.append("\ufffd")
+                    issues.add("unknown_record")
+                    res.add_damage("unknown_record", pos,
+                                   "unsupported WordPerfect character set %d, character %d" % (charset, character), True)
+            elif b == 0xD0 and _known_page_layout(data, pos, length):
+                pass  # Margins, line spacing and justification carry no graded text.
             elif b not in (0xC3, 0xC4):
                 # Delimiters prove where a function ends, not that its payload
                 # is decoration. Unseen groups can carry footnotes or other

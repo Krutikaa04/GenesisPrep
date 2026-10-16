@@ -234,6 +234,32 @@ derived from `samples/official/`. Dates are the working-session dates.
 * A valid delimiter does not prove a group's contents are formatting only.
   Unseen semantic groups now report unknown_record and taint only the affected
   paragraph. C0 character tables remain unsupported; no third-party tables copied.
+* Issue #18 extends that earlier C0 policy narrowly: source revision
+  a3bd5291e19006eb8e7edaead01fed1baf2aedf7 establishes field order
+  `C0 character charset C0` and the printable ASCII rule for set zero. Added
+  known-answer fixtures before implementation for all 95 printable characters;
+  all other character sets and set-zero nonprintables still produce U+FFFD,
+  lossy unknown_record and unverified text. Rejected the upstream converter's
+  whitespace fallback, since an unknown glyph is not a proved space.
+* At that same revision WP5SingleByteFunction identifies 8C/90/99 as returns,
+  93/94/95 as spaces, AB as a visible hyphen, and AC/AD/AE as U+00AD soft
+  hyphens. Literal known answers cover each code and paragraph/page indices.
+  The kit AA-drop/A0-space assumptions disagree with general WP5 semantics;
+  retained them explicitly instead of changing official sample output.
+* WP5PageFormatGroup plus WP5FileStructure establishes four exact D0 layout
+  payloads: margins 01/05 (8 bytes), spacing 02 (4), justification 06 (2,
+  old/new values 0..4). They contain no body text. Literal frames precede the
+  implementation and check untainted surrounding text. Unknown sizes/enums,
+  subgroups and embedded-text functions remain lossy/unverified; framing and
+  byte/record budgets take precedence over semantics. Payload control bytes,
+  every partial C0/justification boundary and corrupt closing gates are tested.
+* Rejected blanket C1/C2 skipping: their tab/indent interpretation depends on
+  paragraph context, so treating them as decoration would silently lose tabs.
+  Deferred vendor character tables and nested document functions until their
+  semantics have independent fixtures. Sources are pinned in the WPD spec;
+  no third-party code/tables/dependencies added. This branch does not touch
+  shared engine/model/CLI/helpers, budget policy or other format decoders,
+  leaving issue #17's M1/M2 large-input work independent.
 * M3-3: stricter BRAVO negatives reject DOS EOF text, text/NUL-only suffixes,
   short prefixes and malformed marker framing. CR empty paragraphs remain.
   High-byte/control text is replaced only during independently identified

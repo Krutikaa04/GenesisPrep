@@ -337,7 +337,8 @@ and [variable-group source](https://sourceforge.net/p/libwpd/code/ci/master/tree
   independent implementation evidence, not organizer-confirmed coverage.
   Delimiting a group does not establish its text semantics: unimplemented
   groups are skipped with lossy `unknown_record` and the affected paragraph
-  is unverified. C0 extended characters use U+FFFD rather than invented tables.
+  is unverified. Unsupported C0 character sets/numbers use U+FFFD rather than
+  invented characters; the set-zero exception is specified below.
 * Ambiguous function framing stops recovery at that boundary. Independent
   earlier paragraphs remain; an incomplete text prefix is unverified, and
   payload bytes cannot leak into apparently verified paragraphs.
@@ -349,6 +350,59 @@ and [variable-group source](https://sourceforge.net/p/libwpd/code/ci/master/tree
   complete a cut function. At most 8MiB of text and 100,000 records are decoded;
   budget loss is explicitly partial + lossy `bad_length`.
 No organizer WPD reference exists: s14/s15 text checks are regression evidence.
+
+### WPD issue #18 — limited character/function extension
+
+**Implementation evidence:** original libwpd revision
+`a3bd5291e19006eb8e7edaead01fed1baf2aedf7`, checked at development time:
+[extended-character field order](https://sourceforge.net/p/libwpd/code/ci/a3bd5291e19006eb8e7edaead01fed1baf2aedf7/tree/src/lib/WP5ExtendedCharacterGroup.cpp),
+[set-zero conversion rule](https://sourceforge.net/p/libwpd/code/ci/a3bd5291e19006eb8e7edaead01fed1baf2aedf7/tree/src/lib/libwpd_internal.cpp),
+[single-byte functions](https://sourceforge.net/p/libwpd/code/ci/a3bd5291e19006eb8e7edaead01fed1baf2aedf7/tree/src/lib/WP5SingleByteFunction.cpp),
+[D0 subgroup identifiers](https://sourceforge.net/p/libwpd/code/ci/a3bd5291e19006eb8e7edaead01fed1baf2aedf7/tree/src/lib/WP5FileStructure.h),
+and [page-layout field reads](https://sourceforge.net/p/libwpd/code/ci/a3bd5291e19006eb8e7edaead01fed1baf2aedf7/tree/src/lib/WP5PageFormatGroup.cpp).
+These establish byte meanings independently of this decoder, not organizer
+confirmation for the hybrid kit profile. **Scope assumption:** these WP5
+meanings apply within the already supported kit header/text profile only.
+No source code, vendor character tables or runtime dependency is bundled.
+
+| Encoding | Plain-text behavior |
+|---|---|
+| `C0 character 00 C0`, character `20..7E` | Printable ASCII character, including literal space and punctuation |
+| `8C`, `90`, `99` | End paragraph, like hard LF; `8C` does not add a hard page-break record |
+| `93`, `94`, `95` | Ordinary space; no paragraph/page-break record |
+| `AB` | Visible ASCII hyphen `-` |
+| `AC`, `AD`, `AE` | Preserve the encoded soft hyphen as U+00AD; do not invent a line/page break |
+
+All 95 printable set-zero characters have independently constructed fixture
+bytes and ASCII expected text. Other sets and set-zero controls/nonprintables
+remain U+FFFD + lossy `unknown_record`, with the affected paragraph unverified.
+In particular, encoded LF/FF inside C0 do not become structural boundaries.
+The external converter's fallback to an ordinary space is deliberately rejected.
+
+Only these D0 subgroups have established layout-only payloads:
+
+| Subgroup | Exact payload bytes | Meaning |
+|---|---:|---|
+| `01` | 8 | Old left/right and new left/right margins, four u16 values |
+| `02` | 4 | Old and new line spacing, two u16 values |
+| `05` | 8 | Old top/bottom and new top/bottom margins, four u16 values |
+| `06` | 2 | Old and new justification, each `0..4` |
+
+After validating the existing mirrored frame, these exact shapes are skipped
+without tainting plain text: layout is outside the graded WPD record fields.
+Total width remains payload+8. Other lengths, subgroups or justification values
+retain lossy `unknown_record` and unverified text. A corrupt gate/size/subgroup
+or truncated frame still stops recovery; the parser never reads into summary
+bytes or beyond its text budget. Payload LF/FF/gates never become body text.
+
+**Retained limits/dead ends:** C1 tabs and C2 indents depend on paragraph context
+and are not blanket layout-only skips. Other C0 sets, footnotes, headers and
+unknown functions remain unsupported. External WP5 AA is an end-of-line hard
+hyphen and A0 is a hard space; the kit's AA-drop/A0-space assumptions remain
+unchanged to preserve established sample output. No claim of full WP5/WP6 or
+character-table coverage is made. No checksum proves plausible character or
+function edits; recognition and text equality are not independent integrity
+checks. BRAVO formatting remains unproved and unchanged by issue #18.
 
 ## BRAVO (s16-s17) — Xerox Alto editor
 There is no magic. CR-delimited paragraphs, including empty paragraphs, precede
