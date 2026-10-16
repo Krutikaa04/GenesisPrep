@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 from helpers import SAMPLES, check_contract, salvage_bytes
 from deadbits.formats import bravo
+from evaluate_bravo import evaluate, negative_cases
 
 
 TRAILER = b"\x00\x00\x06\x00\x04\x00\x0a\x02\x00\x00\x43\x00\x0f\x06\x00"
@@ -51,13 +52,13 @@ class Bravo(unittest.TestCase):
         res = bravo.decode(data, "x")
         self.assertEqual(res.status, "partial")
         self.assertEqual([r["text"] for r in res.records], ["First", "Second", "Final"])
-        self.assertFalse(res.records[-1]["verified"])
+        self.assertTrue(all(r["verified"] is False for r in res.records))
+        self.assertTrue(all(r["issues"] == ["truncated"] for r in res.records))
         self.assertEqual([d["kind"] for d in res.damage], ["truncated"])
-        self.assertTrue(all("verified" not in r for r in res.records[:-1]))
 
     def test_unterminated_last_paragraph_is_unverified(self):
         res = bravo.decode(document(b"First\rUnterminated"), "x")
-        self.assertFalse(res.records[-1]["verified"])
+        self.assertTrue(all(r["verified"] is False for r in res.records))
         self.assertEqual(res.status, "partial")
         self.assertEqual(res.damage[0]["kind"], "invalid_value")
         self.assertTrue(res.damage[0]["lossy"])
@@ -110,66 +111,108 @@ class Bravo(unittest.TestCase):
             accepted += score >= 0.5
         self.assertLess(accepted, 20)
 
-    def test_truncated_files_are_recognised_and_complete_paragraphs_stay_verified(self):
+    def test_truncation_at_every_offset_requires_marker_and_trailer_evidence(self):
         clean = (SAMPLES / "s16.bravo").read_bytes()
         truth = {r["index"]: r["text"] for r in salvage_bytes(clean, "s16.bravo").records}
         marker = clean.index(b"\x1a")
-        found = 0
         for keep in range(len(clean)):
             data = clean[:keep]
             res = salvage_bytes(data, "cut.bin")
             check_contract(self, res, len(data), "cut.bin")
-            if res.format != "BRAVO":
-                self.assertEqual(res.format, "UNKNOWN")
+            if keep < marker + 1 + bravo.MIN_TRAILER:
+                self.assertEqual((res.format, res.status), ("UNKNOWN", "unrecognized"), keep)
+                self.assertEqual(res.records, [], keep)
                 continue
-            found += 1
-            # A trailer cut after its 4th byte still passes the clean-file recognition rules (known limit).
-            if keep < marker + 1 + 4:
-                self.assertEqual(res.status, "partial", keep)
-                self.assertIn("truncated", [d["kind"] for d in res.damage], keep)
+            # The trailer has no proved length/checksum: cuts leaving sufficient
+            # structural evidence cannot be distinguished from a full trailer.
+            self.assertEqual((res.format, res.status), ("BRAVO", "ok"), keep)
             for rec in res.records:
                 if rec.get("verified", True):
                     self.assertEqual(rec["text"], truth[rec["index"]], keep)
-        # Everything with three CR-terminated paragraphs (offset 36 onward) is recognised until the trailer
-        # reaches the minimum length recognition accepts.
-        self.assertGreaterEqual(found, 100)
 
-    def test_cut_inside_trailer_reports_lost_trailer(self):
+    def test_short_trailer_is_unknown_and_direct_recovery_is_unverified(self):
         clean = (SAMPLES / "s17.bravo").read_bytes()
         marker = clean.index(b"\x1a")
-        for keep in (marker + 1, marker + 2, marker + 3):
-            res = salvage_bytes(clean[:keep], "cut.bin")
+        for keep in range(marker + 1, marker + 1 + bravo.MIN_TRAILER):
+            data = clean[:keep]
+            automatic = salvage_bytes(data, "cut.bin")
+            self.assertEqual((automatic.format, automatic.status), ("UNKNOWN", "unrecognized"))
+            res = bravo.decode(data, "cut.bin")
+            check_contract(self, res, len(data))
             self.assertEqual((res.format, res.status), ("BRAVO", "partial"))
             self.assertEqual([r["text"] for r in res.records][-1], "Signed, the lab.")
-            self.assertTrue(all("verified" not in r for r in res.records))
+            self.assertTrue(all(r["verified"] is False and r["issues"] == ["truncated"] for r in res.records))
             self.assertEqual([d["kind"] for d in res.damage], ["truncated"])
 
     def test_other_cr_free_or_line_oriented_text_is_still_not_bravo(self):
         text = b"First paragraph here\rSecond paragraph here\rThird paragraph here\r"
-        self.assertEqual(bravo.detect(text), 0.55)                      # the documented trade-off
-        for data in (text.replace(b"\r", b"\r\n"), text.replace(b"\r", b"\n"), text[:30], b"a\rb\rc\r",
+        for data in (text, text.replace(b"\r", b"\r\n"), text.replace(b"\r", b"\n"), text[:30], b"a\rb\rc\r",
                      text + b"\x89", text * 2000, b"plain text, not a legacy file\n"):
             self.assertEqual(bravo.detect(data), 0.0, data[:20])
         for name in ("s25_random.bin", "s26_empty.dat", "s27_notes.txt", "s28_tiny.dat", "s30_png_like.dat"):
             data = (SAMPLES.parent / "samples" / name).read_bytes()
             self.assertEqual(salvage_bytes(data, name).format, "UNKNOWN", name)
 
+    def test_independent_ordinary_text_controls_remain_unknown(self):
+        for name, data in negative_cases():
+            with self.subTest(case=name):
+                self.assertEqual(bravo.detect(data), 0)
+                res = salvage_bytes(data, name + ".bravo")
+                check_contract(self, res, len(data), name)
+                self.assertEqual((res.format, res.status), ("UNKNOWN", "unrecognized"))
+                self.assertEqual(res.records, [])
+                direct = bravo.decode(data, name)
+                check_contract(self, direct, len(data), name)
+                self.assertEqual(direct.status, "partial")
+                self.assertTrue(direct.records)
+                self.assertTrue(all(r.get("verified") is False and r.get("issues") for r in direct.records))
+        report = evaluate()
+        self.assertEqual(report["negative_cases"], 32)
+        self.assertEqual(report["false_bravo_identifications"], 0)
+        self.assertEqual(report["unknown_cases"], 32)
+
+    def test_lost_delimiter_taints_later_indices_against_independent_truth(self):
+        # Literal paragraphs and expected records do not come from the decoder.
+        data = document(b"Alpha paragraph\rBravo paragraph\0Charlie paragraph\rDelta paragraph\r")
+        res = salvage_bytes(data, "lost-cr.bin")
+        check_contract(self, res, len(data))
+        self.assertEqual((res.format, res.status), ("BRAVO", "partial"))
+        self.assertEqual(res.records, [
+            {"index": 0, "text": "Alpha paragraph"},
+            {"index": 1, "text": "Bravo paragraph\ufffdCharlie paragraph",
+             "verified": False, "issues": ["invalid_value"]},
+            {"index": 2, "text": "Delta paragraph", "verified": False, "issues": ["invalid_value"]}])
+        self.assertTrue(any("numbering" in d["detail"] and not d["lossy"] for d in res.damage))
+
     def test_tabs_and_linefeeds_are_preserved_inside_cr_paragraphs(self):
         res = bravo.decode(document(b"First\tline\ncontinued\r"), "x")
         self.assertEqual(res.records[0]["text"], "First\tline\ncontinued")
         self.assertEqual(res.status, "ok")
 
-    def test_unknown_trailer_does_not_invent_format_runs_or_damage(self):
-        for suffix in (b"ASCII", bytes(range(256))):
+    def test_direct_decode_with_invalid_identification_never_verifies_text(self):
+        for suffix in (b"ASCII", bytes(range(256)), b"\0" * 15, TRAILER + b"X" * 513):
             res = bravo.decode(b"First\rSecond\r\x1a" + suffix, "x")
             self.assertEqual(res.metadata, {})
-            self.assertEqual(res.damage, [])
+            self.assertEqual(res.status, "partial")
+            self.assertTrue(all(r["verified"] is False and r["issues"] == ["invalid_value"] for r in res.records))
+            self.assertEqual([d["kind"] for d in res.damage], ["invalid_value"])
+            self.assertFalse(res.damage[0]["lossy"])
             self.assertEqual([r["text"] for r in res.records], ["First", "Second"])
+
+    def test_direct_decode_short_prefix_and_binary_text_are_unverified(self):
+        for text in (b"A\r", b"\0" * 32 + b"\rAfter\r"):
+            data = document(text)
+            self.assertEqual(bravo.detect(data), 0)
+            res = bravo.decode(data, "x")
+            check_contract(self, res, len(data))
+            self.assertEqual(res.status, "partial")
+            self.assertTrue(res.records)
+            self.assertTrue(all(r.get("verified") is False and "invalid_value" in r["issues"] for r in res.records))
 
     def test_record_budget_preserves_prior_paragraphs_and_reports_loss(self):
         with patch.object(bravo, "MAX_RECORDS", 2):
-            res = bravo.decode(document(b"A\rB\rC\r"), "x")
-        self.assertEqual([r["text"] for r in res.records], ["A", "B"])
+            res = bravo.decode(document(b"AA\rBB\rCC\r"), "x")
+        self.assertEqual([r["text"] for r in res.records], ["AA", "BB"])
         self.assertEqual(res.status, "partial")
         self.assertEqual([d["kind"] for d in res.damage], ["bad_length"])
         self.assertTrue(res.damage[0]["lossy"])
@@ -180,12 +223,14 @@ class Bravo(unittest.TestCase):
             res = bravo.decode(document(b"A\rBCDEFG\rZ\r"), "x")
         self.assertEqual([r["text"] for r in res.records], ["A", "BCDEF"])
         self.assertFalse(res.records[-1]["verified"])
+        self.assertFalse(res.records[0]["verified"])
+        self.assertEqual(res.records[0]["issues"], ["bad_length"])
         self.assertEqual(res.records[-1]["issues"], ["bad_length"])
         self.assertEqual(res.status, "partial")
         self.assertEqual([d["kind"] for d in res.damage], ["bad_length"])
         self.assertEqual(res.damage[0]["offset"], 7)
-        with patch.object(bravo, "MAX_TEXT_BYTES", 2), patch.object(bravo, "MAX_RECORDS", 1):
-            exact = bravo.decode(document(b"A\r"), "x")
+        with patch.object(bravo, "MAX_TEXT_BYTES", 8), patch.object(bravo, "MAX_RECORDS", 1):
+            exact = bravo.decode(document(b"First A\r"), "x")
         self.assertEqual(exact.status, "ok")
         self.assertEqual(exact.damage, [])
 

@@ -1,0 +1,237 @@
+{
+  "cases": [
+    {
+      "case": "memo-none",
+      "format": "UNKNOWN",
+      "records": 0,
+      "size": 64,
+      "status": "unrecognized"
+    },
+    {
+      "case": "memo-eof",
+      "format": "UNKNOWN",
+      "records": 0,
+      "size": 65,
+      "status": "unrecognized"
+    },
+    {
+      "case": "memo-one_zero",
+      "format": "UNKNOWN",
+      "records": 0,
+      "size": 66,
+      "status": "unrecognized"
+    },
+    {
+      "case": "memo-two_zeros",
+      "format": "UNKNOWN",
+      "records": 0,
+      "size": 67,
+      "status": "unrecognized"
+    },
+    {
+      "case": "memo-short_binary",
+      "format": "UNKNOWN",
+      "records": 0,
+      "size": 68,
+      "status": "unrecognized"
+    },
+    {
+      "case": "memo-text",
+      "format": "UNKNOWN",
+      "records": 0,
+      "size": 69,
+      "status": "unrecognized"
+    },
+    {
+      "case": "memo-zeros",
+      "format": "UNKNOWN",
+      "records": 0,
+      "size": 80,
+      "status": "unrecognized"
+    },
+    {
+      "case": "memo-text_and_zeros",
+      "format": "UNKNOWN",
+      "records": 0,
+      "size": 71,
+      "status": "unrecognized"
+    },
+    {
+      "case": "inventory-none",
+      "format": "UNKNOWN",
+      "records": 0,
+      "size": 42,
+      "status": "unrecognized"
+    },
+    {
+      "case": "inventory-eof",
+      "format": "UNKNOWN",
+      "records": 0,
+      "size": 43,
+      "status": "unrecognized"
+    },
+    {
+      "case": "inventory-one_zero",
+      "format": "UNKNOWN",
+      "records": 0,
+      "size": 44,
+      "status": "unrecognized"
+    },
+    {
+      "case": "inventory-two_zeros",
+      "format": "UNKNOWN",
+      "records": 0,
+      "size": 45,
+      "status": "unrecognized"
+    },
+    {
+      "case": "inventory-short_binary",
+      "format": "UNKNOWN",
+      "records": 0,
+      "size": 46,
+      "status": "unrecognized"
+    },
+    {
+      "case": "inventory-text",
+      "format": "UNKNOWN",
+      "records": 0,
+      "size": 47,
+      "status": "unrecognized"
+    },
+    {
+      "case": "inventory-zeros",
+      "format": "UNKNOWN",
+      "records": 0,
+      "size": 58,
+      "status": "unrecognized"
+    },
+    {
+      "case": "inventory-text_and_zeros",
+      "format": "UNKNOWN",
+      "records": 0,
+      "size": 49,
+      "status": "unrecognized"
+    },
+    {
+      "case": "log-none",
+      "format": "UNKNOWN",
+      "records": 0,
+      "size": 69,
+      "status": "unrecognized"
+    },
+    {
+      "case": "log-eof",
+      "format": "UNKNOWN",
+      "records": 0,
+      "size": 70,
+      "status": "unrecognized"
+    },
+    {
+      "case": "log-one_zero",
+      "format": "UNKNOWN",
+      "records": 0,
+      "size": 71,
+      "status": "unrecognized"
+    },
+    {
+      "case": "log-two_zeros",
+      "format": "UNKNOWN",
+      "records": 0,
+      "size": 72,
+      "status": "unrecognized"
+    },
+    {
+      "case": "log-short_binary",
+      "format": "UNKNOWN",
+      "records": 0,
+      "size": 73,
+      "status": "unrecognized"
+    },
+    {
+      "case": "log-text",
+      "format": "UNKNOWN",
+      "records": 0,
+      "size": 74,
+      "status": "unrecognized"
+    },
+    {
+      "case": "log-zeros",
+      "format": "UNKNOWN",
+      "records": 0,
+      "size": 85,
+      "status": "unrecognized"
+    },
+    {
+      "case": "log-text_and_zeros",
+      "format": "UNKNOWN",
+      "records": 0,
+      "size": 76,
+      "status": "unrecognized"
+    },
+    {
+      "case": "tabs-none",
+      "format": "UNKNOWN",
+      "records": 0,
+      "size": 46,
+      "status": "unrecognized"
+    },
+    {
+      "case": "tabs-eof",
+      "format": "UNKNOWN",
+      "records": 0,
+      "size": 47,
+      "status": "unrecognized"
+    },
+    {
+      "case": "tabs-one_zero",
+      "format": "UNKNOWN",
+      "records": 0,
+      "size": 48,
+      "status": "unrecognized"
+    },
+    {
+      "case": "tabs-two_zeros",
+      "format": "UNKNOWN",
+      "records": 0,
+      "size": 49,
+      "status": "unrecognized"
+    },
+    {
+      "case": "tabs-short_binary",
+      "format": "UNKNOWN",
+      "records": 0,
+      "size": 50,
+      "status": "unrecognized"
+    },
+    {
+      "case": "tabs-text",
+      "format": "UNKNOWN",
+      "records": 0,
+      "size": 51,
+      "status": "unrecognized"
+    },
+    {
+      "case": "tabs-zeros",
+      "format": "UNKNOWN",
+      "records": 0,
+      "size": 62,
+      "status": "unrecognized"
+    },
+    {
+      "case": "tabs-text_and_zeros",
+      "format": "UNKNOWN",
+      "records": 0,
+      "size": 53,
+      "status": "unrecognized"
+    }
+  ],
+  "false_bravo_identifications": 0,
+  "limitations": [
+    "Constructed ordinary-text negatives, independent of pristine decoder output.",
+    "Marker plus a plausible binary trailer can still match unrelated text.",
+    "This corpus does not establish a general false-identification rate."
+  ],
+  "negative_cases": 32,
+  "schema_version": 1,
+  "unknown_cases": 32
+}

@@ -157,8 +157,18 @@ Remaining recognized sources use verified pristine decoder output as a
 | PAK | 6 | 13/24 | 13/24 | 1 | 0 |
 | WAD | 6 | 24/42 | 22/42 | 2 | 0 |
 | WPD | 12 | 36/48 | 29/48 | 0 | 0 |
-| BRAVO | 12 | 41/60 | 34/60 | 0 | 0 |
-| **Total** | **107** | **519/789 (65.8%)** | **482/789 (61.1%)** | **4** | **0** |
+| BRAVO | 12 | 27/60 | 21/60 | 0 | 0 |
+| **Total** | **107** | **505/789 (64.0%)** | **469/789 (59.4%)** | **4** | **0** |
+
+Issue #15 deliberately removes BRAVO's text-only identification guess. On the
+same mutation corpus, BRAVO recovery falls from 41/60 to 27/60 keys and complete
+records from 34/60 to 21/60; all four damaged-text cases with marker/trailer
+evidence still recover. Separately, 32 independently constructed ordinary-text
+controls improve from 20 false BRAVO identifications to zero (all UNKNOWN).
+Reproduce the [current negative-control ledger](reports/bravo-identification.json)
+with `python3 tools/evaluate_bravo.py --json /tmp/bravo-identification.json`.
+These controls measure the specific ambiguity; they do not prove a general
+false-identification rate or the accuracy of decoder-derived recovery baselines.
 
 Unknown originals stayed UNKNOWN in all 24 changed cases. Zero-record
 baselines have no recovery percentage. Original unverified records and optional
@@ -200,10 +210,11 @@ experiments in [FIELD-LOG.md](FIELD-LOG.md).
 - PAK/WAD recover at most 100,000 entries, with hash work at most four times
   input size. WPD/BRAVO cap text at 8MiB and records at 100,000. Excluded data
   is reported as loss; omitted hashes/text are never fabricated.
-- BRAVO has no magic: it is recognised from its marker and trailer. Truncated files are recognised only at low
-  confidence from CR-paragraph text alone, so other CR-only text could be misidentified; files cut before three
-  paragraphs remain unknown. Its optional
-  formatting-run layout remains unproved. WPD support follows the kit's header
+- BRAVO has no magic: recognition requires marker/trailer evidence. Fragments
+  without that evidence remain UNKNOWN. Explicit library recovery marks all
+  paragraphs unverified when identification fails. Trailer length and optional
+  formatting runs remain unproved: a cut leaving enough trailer evidence or
+  unrelated text with a matching binary suffix can still pass. WPD support follows the kit's header
   profile; unimplemented function semantics are flagged rather than guessed.
 - Filesystem limits can make the required output impossible: names too long
   after adding `.json`, names aliasing another output, or basename `report`
