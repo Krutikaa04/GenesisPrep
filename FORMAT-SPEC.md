@@ -187,6 +187,15 @@ Duplicate ids and unknown types are kept and flagged. **Stated limitation:** fli
 a wrong `xor_key` that still produces printable text, cannot be detected - VAULT has no checksum.
 Header flag bits other than bit0 are ignored (s09 has flags=1, nothing else seen); `xor_key` 0 is valid.
 
+**VAULT resource policy (#17).** The engine's 128MiB reader limit remains. Exact,
+allocation-free RLE90 scans replace the 127x projection and this format's coarse
+2MiB ceiling. Both XOR/RLE candidate orders and invalid expanded prefixes are
+charged; aliases are charged once per reference. The existing 16MiB projected
+work/output budgets remain. Binary/bitmap payload bytes are not retained in output;
+text alone incurs a worst-width Unicode charge. Fixed record/name charges remain.
+Index `size` is never trusted as an expansion bound. Refusal remains failed with
+lossy bad_length at offset zero. See docs/VAULT-LARGE-FILES.md for exact accounting.
+
 ## WKS (s11-s13) — Lotus 1-2-3 worksheet
 Record = opcode u16, length u16, payload. BOF 0x00 (0x0404), RANGE 0x06, COLW 0x08, BLANK 0x0C,
 INTEGER 0x0D, NUMBER 0x0E, LABEL 0x0F, FORMULA 0x10, EOF 0x01; 0x02-0x05, 0x07, 0x0B are known
@@ -465,14 +474,15 @@ and entropy in `metadata`. Recognised-but-unreadable (e.g. `LB98` + 3 bytes, s29
   may deliberately leave an oversized damaged file UNKNOWN when the prefix
   cannot independently identify it. Recognized budget refusals are failed
   with lossy `bad_length`; no missing bytes are invented as records.
-* M1/M2 adapters have a conservative 2MiB decode ceiling. Structural-item
+* M1/M2 adapters except VAULT retain a conservative 2MiB decode ceiling. Structural-item
   projections additionally cap LABLOG at 200,000 bytes, WKS at 400,000 bytes,
   EBCDIC-DUMP at 500,000 bytes. These are safety policies (100,000 minimum-size
   items), not on-disk format limits. They can refuse a valid sparse file.
-* VAULT independently limits projected work/output to 16MiB each. It charges
-  every physical declared index reference, including aliases, using a 127x RLE
-  expansion upper bound, both candidate orders, Unicode text width and fixed
-  record/name overhead. Declared decoded size cannot reduce the budget.
+* VAULT limits projected work/output to 16MiB each, replacing its 2MiB ceiling.
+  It charges every physical declared index reference, including aliases, using
+  exact allocation-free RLE scans of both candidate orders and invalid prefixes,
+  Unicode text width for retained text, and fixed record/name overhead.
+  Declared decoded size cannot reduce the budget.
 * UNKNOWN metadata scans only the first 1MiB, reports analysis_prefix_bytes
   when sampled, and caps strings at ten of at most 256 characters each.
 * UTF-8/LF JSON escapes undecodable filename bytes losslessly and rejects

@@ -1,0 +1,306 @@
+{
+  "baseline_commit": "28d8b81",
+  "before": {
+    "limits_source_sha256": "618c3f371a89c66300bd9c8b8f9c1d051304b1982b12a9c42d3b38549feda394",
+    "note": "Fixture construction/input allocation excluded; traced parsing plus JSON serialization included. Three runs per case; this is not process RSS.",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "python": "3.12.14",
+    "rows": [
+      {
+        "case": "large-binary",
+        "damage": [
+          {
+            "detail": "VAULT input exceeds the 2097152-byte legacy decoder safety limit",
+            "kind": "bad_length",
+            "lossy": true,
+            "offset": 0
+          }
+        ],
+        "format": "VAULT",
+        "input_bytes": 2881456,
+        "input_sha256": "3f355d79d18f4e5eb2db57526f7e374d90b95eac0257eb57a9dae97b94079bc5",
+        "json_bytes": 258,
+        "median_ms": 0.712,
+        "peak_traced_bytes": 66438,
+        "records": 0,
+        "status": "failed"
+      },
+      {
+        "case": "large-text",
+        "damage": [
+          {
+            "detail": "VAULT input exceeds the 2097152-byte legacy decoder safety limit",
+            "kind": "bad_length",
+            "lossy": true,
+            "offset": 0
+          }
+        ],
+        "format": "VAULT",
+        "input_bytes": 2377456,
+        "input_sha256": "617b202fa3665a5f6d567d709eb38a6a784f476df9f4b5cf312a410b00e297d6",
+        "json_bytes": 256,
+        "median_ms": 0.419,
+        "peak_traced_bytes": 66210,
+        "records": 0,
+        "status": "failed"
+      },
+      {
+        "case": "low-expansion-rle",
+        "damage": [
+          {
+            "detail": "VAULT projected payload work exceeds the 16777216-byte safety budget",
+            "kind": "bad_length",
+            "lossy": true,
+            "offset": 0
+          }
+        ],
+        "format": "VAULT",
+        "input_bytes": 98416,
+        "input_sha256": "207b41b80912d80f9701581f1ac909e31b814076fd8de339ccabaa53e72fefb6",
+        "json_bytes": 265,
+        "median_ms": 0.829,
+        "peak_traced_bytes": 2539,
+        "records": 0,
+        "status": "failed"
+      },
+      {
+        "case": "aliased-rle",
+        "damage": [
+          {
+            "detail": "VAULT projected payload work exceeds the 16777216-byte safety budget",
+            "kind": "bad_length",
+            "lossy": true,
+            "offset": 0
+          }
+        ],
+        "format": "VAULT",
+        "input_bytes": 2421,
+        "input_sha256": "cdd5688750212e5627b8aceace0ad0e4c2b5be66f9d0a98b94b2f9b9c3a5683a",
+        "json_bytes": 258,
+        "median_ms": 0.947,
+        "peak_traced_bytes": 2097,
+        "records": 0,
+        "status": "failed"
+      },
+      {
+        "case": "aliased-xor-rle",
+        "damage": [
+          {
+            "detail": "VAULT projected payload work exceeds the 16777216-byte safety budget",
+            "kind": "bad_length",
+            "lossy": true,
+            "offset": 0
+          }
+        ],
+        "format": "VAULT",
+        "input_bytes": 2421,
+        "input_sha256": "a24b7465c6411d6c610f3891ea748b729de1c79e9bda1cf8c634afa32e7d7ade",
+        "json_bytes": 262,
+        "median_ms": 0.926,
+        "peak_traced_bytes": 2053,
+        "records": 0,
+        "status": "failed"
+      },
+      {
+        "case": "invalid-rle-expanded-prefix",
+        "damage": [
+          {
+            "detail": "VAULT projected payload work exceeds the 16777216-byte safety budget",
+            "kind": "bad_length",
+            "lossy": true,
+            "offset": 0
+          }
+        ],
+        "format": "VAULT",
+        "input_bytes": 2422,
+        "input_sha256": "0d879af01881510fd16a483ce7451175d2e4e871b46801db1d6ba598aaf8de45",
+        "json_bytes": 274,
+        "median_ms": 0.928,
+        "peak_traced_bytes": 2001,
+        "records": 0,
+        "status": "failed"
+      },
+      {
+        "case": "plain-alias-work",
+        "damage": [
+          {
+            "detail": "VAULT projected payload work exceeds the 16777216-byte safety budget",
+            "kind": "bad_length",
+            "lossy": true,
+            "offset": 0
+          }
+        ],
+        "format": "VAULT",
+        "input_bytes": 92020,
+        "input_sha256": "a3afcd24d58bd65f53f80cee100500f107cc666737160ddf0e9437ccd7b63105",
+        "json_bytes": 264,
+        "median_ms": 1.107,
+        "peak_traced_bytes": 1943,
+        "records": 0,
+        "status": "failed"
+      },
+      {
+        "case": "record-output-amplification",
+        "damage": [
+          {
+            "detail": "VAULT projected output exceeds the 16777216-byte safety budget",
+            "kind": "bad_length",
+            "lossy": true,
+            "offset": 0
+          }
+        ],
+        "format": "VAULT",
+        "input_bytes": 320020,
+        "input_sha256": "07c5d1c97556ba127ce0d9e85c28cdd4df01091b44f8647c0e5d0adc4fe93485",
+        "json_bytes": 270,
+        "median_ms": 0.257,
+        "peak_traced_bytes": 1878,
+        "records": 0,
+        "status": "failed"
+      }
+    ],
+    "schema_version": 1
+  },
+  "candidate": {
+    "limits_source_sha256": "0854031ef6db4de3a144623fa309cad1efd553f971220ff4d568f000d67ea586",
+    "note": "Fixture construction/input allocation excluded; traced parsing plus JSON serialization included. Three runs per case; this is not process RSS.",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "python": "3.12.14",
+    "rows": [
+      {
+        "case": "large-binary",
+        "damage": [],
+        "format": "VAULT",
+        "input_bytes": 2881456,
+        "input_sha256": "3f355d79d18f4e5eb2db57526f7e374d90b95eac0257eb57a9dae97b94079bc5",
+        "json_bytes": 8121,
+        "median_ms": 10.833,
+        "peak_traced_bytes": 209658,
+        "records": 48,
+        "status": "ok"
+      },
+      {
+        "case": "large-text",
+        "damage": [],
+        "format": "VAULT",
+        "input_bytes": 2377456,
+        "input_sha256": "617b202fa3665a5f6d567d709eb38a6a784f476df9f4b5cf312a410b00e297d6",
+        "json_bytes": 2600599,
+        "median_ms": 339.437,
+        "peak_traced_bytes": 7599140,
+        "records": 48,
+        "status": "ok"
+      },
+      {
+        "case": "low-expansion-rle",
+        "damage": [],
+        "format": "VAULT",
+        "input_bytes": 98416,
+        "input_sha256": "207b41b80912d80f9701581f1ac909e31b814076fd8de339ccabaa53e72fefb6",
+        "json_bytes": 13278,
+        "median_ms": 287.393,
+        "peak_traced_bytes": 61514,
+        "records": 80,
+        "status": "ok"
+      },
+      {
+        "case": "aliased-rle",
+        "damage": [
+          {
+            "detail": "VAULT projected payload work exceeds the 16777216-byte safety budget",
+            "kind": "bad_length",
+            "lossy": true,
+            "offset": 0
+          }
+        ],
+        "format": "VAULT",
+        "input_bytes": 2421,
+        "input_sha256": "cdd5688750212e5627b8aceace0ad0e4c2b5be66f9d0a98b94b2f9b9c3a5683a",
+        "json_bytes": 258,
+        "median_ms": 24.711,
+        "peak_traced_bytes": 2097,
+        "records": 0,
+        "status": "failed"
+      },
+      {
+        "case": "aliased-xor-rle",
+        "damage": [
+          {
+            "detail": "VAULT projected payload work exceeds the 16777216-byte safety budget",
+            "kind": "bad_length",
+            "lossy": true,
+            "offset": 0
+          }
+        ],
+        "format": "VAULT",
+        "input_bytes": 2421,
+        "input_sha256": "a24b7465c6411d6c610f3891ea748b729de1c79e9bda1cf8c634afa32e7d7ade",
+        "json_bytes": 262,
+        "median_ms": 61.989,
+        "peak_traced_bytes": 2053,
+        "records": 0,
+        "status": "failed"
+      },
+      {
+        "case": "invalid-rle-expanded-prefix",
+        "damage": [
+          {
+            "detail": "VAULT projected payload work exceeds the 16777216-byte safety budget",
+            "kind": "bad_length",
+            "lossy": true,
+            "offset": 0
+          }
+        ],
+        "format": "VAULT",
+        "input_bytes": 2422,
+        "input_sha256": "0d879af01881510fd16a483ce7451175d2e4e871b46801db1d6ba598aaf8de45",
+        "json_bytes": 274,
+        "median_ms": 24.311,
+        "peak_traced_bytes": 2001,
+        "records": 0,
+        "status": "failed"
+      },
+      {
+        "case": "plain-alias-work",
+        "damage": [
+          {
+            "detail": "VAULT projected payload work exceeds the 16777216-byte safety budget",
+            "kind": "bad_length",
+            "lossy": true,
+            "offset": 0
+          }
+        ],
+        "format": "VAULT",
+        "input_bytes": 92020,
+        "input_sha256": "a3afcd24d58bd65f53f80cee100500f107cc666737160ddf0e9437ccd7b63105",
+        "json_bytes": 264,
+        "median_ms": 2.029,
+        "peak_traced_bytes": 1943,
+        "records": 0,
+        "status": "failed"
+      },
+      {
+        "case": "record-output-amplification",
+        "damage": [
+          {
+            "detail": "VAULT projected output exceeds the 16777216-byte safety budget",
+            "kind": "bad_length",
+            "lossy": true,
+            "offset": 0
+          }
+        ],
+        "format": "VAULT",
+        "input_bytes": 320020,
+        "input_sha256": "07c5d1c97556ba127ce0d9e85c28cdd4df01091b44f8647c0e5d0adc4fe93485",
+        "json_bytes": 270,
+        "median_ms": 0.249,
+        "peak_traced_bytes": 1878,
+        "records": 0,
+        "status": "failed"
+      }
+    ],
+    "schema_version": 1
+  },
+  "issue": 17,
+  "scope": "VAULT only"
+}
