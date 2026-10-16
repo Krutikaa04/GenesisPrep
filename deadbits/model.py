@@ -25,13 +25,31 @@ class Result:
         self.damage.append({"kind": kind, "offset": int(offset), "detail": detail, "lossy": bool(lossy)})
 
     def to_dict(self) -> dict:
+        if not isinstance(self.source_file, str):
+            raise ValueError("source_file must be a string")
         if self.status not in STATUSES:
             raise ValueError("status %r not in contract" % self.status)
         if self.format not in FORMAT_NAMES:
             raise ValueError("format %r not in contract" % self.format)
+        if not isinstance(self.metadata, dict):
+            raise ValueError("metadata must be an object")
+        if not isinstance(self.records, list) or any(not isinstance(r, dict) for r in self.records):
+            raise ValueError("records must be a list of objects")
+        if not isinstance(self.damage, list):
+            raise ValueError("damage must be a list")
+        for item in self.damage:
+            if (not isinstance(item, dict)
+                    or set(item) != {"kind", "offset", "detail", "lossy"}
+                    or item["kind"] not in KINDS
+                    or type(item["offset"]) is not int
+                    or not isinstance(item["detail"], str)
+                    or type(item["lossy"]) is not bool):
+                raise ValueError("invalid damage entry")
+        if not isinstance(self.notes, list) or any(not isinstance(n, str) for n in self.notes):
+            raise ValueError("notes must be a list of strings")
         damage = self.damage
         if self.size is not None:   # an offset must point inside the file (or exactly at EOF)
-            damage = [dict(d, offset=min(d["offset"], self.size)) for d in damage]
+            damage = [dict(d, offset=max(0, min(d["offset"], self.size))) for d in damage]
         return {"source_file": self.source_file, "format": self.format, "status": self.status,
                 "metadata": self.metadata, "records": self.records, "damage": damage}
 

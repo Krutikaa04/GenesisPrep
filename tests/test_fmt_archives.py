@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 from helpers import SAMPLES, check_contract, salvage_bytes
 from deadbits.formats import _archive, pak, wad
+from deadbits.model import Result
 
 
 def archive(module, payload=b"abcdefgh", entries=None, magic=None):
@@ -111,6 +112,32 @@ class ArchiveHardening(unittest.TestCase):
                 self.assertFalse(result.records[index]["verified"])
             self.assertNotIn("verified", result.records[3])
             self.assertEqual(kinds(result), ["invalid_value"])
+
+    def test_overlap_sweep_matches_independent_pairwise_oracle(self):
+        rng = random.Random(317)
+        for _ in range(100):
+            spans = [(rng.randrange(50), rng.randrange(12)) for _ in range(20)]
+            result = Result("probe", "WAD", "ok")
+            result.records = [{"name": "E%d" % i} for i in range(len(spans))]
+            entries = [(i * 16, (start, start + length)) for i, (start, length) in enumerate(spans)]
+            _archive.note_ambiguities(result, entries)
+            expected = {i for i, (a, length) in enumerate(spans) if length and
+                        any(j != i and other and a < b + other and a + length > b
+                            for j, (b, other) in enumerate(spans))}
+            found = {i for i, rec in enumerate(result.records) if rec.get("verified") is False}
+            self.assertEqual(found, expected)
+
+    def test_dense_nested_overlap_has_one_warning_and_linear_marking(self):
+        count = 10_000
+        result = Result("nested", "WAD", "ok")
+        result.records = [{"name": "E%d" % i} for i in range(count)]
+        entries = [(i * 16, (i, 2 * count - i)) for i in range(count)]
+        original = _archive.unverified
+        with patch.object(_archive, "unverified", wraps=original) as mark:
+            _archive.note_ambiguities(result, entries)
+        self.assertEqual(mark.call_count, count)
+        self.assertEqual(len(result.damage), 1)
+        self.assertTrue(all(rec["verified"] is False for rec in result.records))
 
     def test_adjacent_payloads_and_zero_byte_markers_do_not_overlap(self):
         entries = [("ONE", 12, 4), ("TWO", 16, 4), ("MARKER", 15, 0)]

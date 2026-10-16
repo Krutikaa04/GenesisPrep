@@ -252,3 +252,28 @@ derived from `samples/official/`. Dates are the working-session dates.
   verified -> those samples are now `verified:false`; likewise when the header CRC fails (time_ms).
 * Damage offsets could point past EOF (CVT cut inside block 1) -> clamped to the file size.
 * A corrupted LIBRA length byte swallowed the next intact record -> field-based recovery + rescan.
+
+* M3 platform: corrected the handoff's stale auto-discovery claim; the engine
+  previously used a manual registry. Public-module discovery, private template,
+  import isolation and invalid-score/result tests now support controlled
+  extension without editing the registry. New format names still need the
+  integrator's contract-vocabulary change.
+* Fixed the launcher's missing executable bit. Added regular-file-only reads,
+  bounded size checks, replacement checks, atomic output and strict JSON/result
+  shape checks. Tested permission errors, FIFOs, input/output symlinks, hostile
+  names, nonfinite output and output failures without stopping siblings.
+* Invalid-byte filename JSON roundtrips via escapes. This macOS filesystem
+  rejects creating such a filename (EILSEQ); the end-to-end test is skipped
+  here and exercised on Linux CI. Serialization itself is tested everywhere.
+* Found irreconcilable naming edge cases: a 255-byte basename plus `.json`
+  exceeds the filesystem limit, and source basename `report` collides with the
+  combined report. These now report failure instead of silently stopping or
+  overwriting a per-file result with a successful claim.
+* Resource review rejected a common records-only cap: WKS accumulates cells in
+  local dictionaries, LABLOG has metadata events, and aliased VAULT compressed
+  payloads expand independently. Conservative preflight estimates now bound
+  those adapters without editing M1/M2 files; refusals are explicit.
+* Detection itself needed a guard: damaged large LABLOG headers could allocate
+  the lazy CRC index before decoding was refused. Oversized legacy detection
+  now uses a 64KiB prefix; an independent test verifies the full file never
+  reaches that detector. UNKNOWN analysis is separately prefix-bounded.

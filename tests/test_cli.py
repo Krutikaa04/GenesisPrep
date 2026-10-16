@@ -129,3 +129,131 @@ class Cli(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CliSafety(unittest.TestCase):
+    def test_report_shape_on_missing_input(self):
+        from deadbits.cli import run
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            report = run(root / "missing", root / "out")
+            self.assertEqual(set(report), {"tool_version", "files", "totals"})
+
+    def test_same_directory_does_not_overwrite_inputs(self):
+        from deadbits.cli import main
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "report.json"
+            source.write_bytes(b"precious source bytes")
+            self.assertEqual(main([directory, directory]), 0)
+            self.assertEqual(source.read_bytes(), b"precious source bytes")
+
+    @unittest.skipUnless(hasattr(os, "symlink"), "symlinks unavailable")
+    def test_symlinks_are_failed_and_output_symlinks_are_replaced_safely(self):
+        from deadbits.cli import run
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            inp, out = root / "in", root / "out"
+            inp.mkdir()
+            out.mkdir()
+            (inp / "good").write_bytes((SAMPLES / "s01.dat").read_bytes())
+            (inp / "link").symlink_to(inp / "good")
+            (inp / "dirlink").symlink_to(out, target_is_directory=True)
+            outside = root / "outside"
+            outside.write_bytes(b"do not overwrite")
+            (out / "good.json").symlink_to(outside)
+            (out / "report.json").symlink_to(outside)
+            report = run(inp, out)
+            self.assertEqual(outside.read_bytes(), b"do not overwrite")
+            self.assertFalse((out / "good.json").is_symlink())
+            self.assertFalse((out / "report.json").is_symlink())
+            rows = {row["file"]: row for row in report["files"]}
+            self.assertEqual(rows["good"]["status"], "ok")
+            self.assertEqual(rows["link"]["status"], "failed")
+            self.assertEqual(rows["dirlink"]["status"], "failed")
+            self.assertEqual(len(report["files"]), 3)
+
+    def test_long_basename_failure_does_not_abort_siblings(self):
+        from deadbits.cli import run
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            inp, out = root / "in", root / "out"
+            inp.mkdir()
+            long_name = "a" * 255
+            try:
+                (inp / long_name).write_bytes(b"unknown")
+            except OSError as exc:
+                self.skipTest("filesystem does not support 255-byte basenames: %s" % exc)
+            (inp / "z-good").write_bytes((SAMPLES / "s01.dat").read_bytes())
+            report = run(inp, out)
+            rows = {row["file"]: row for row in report["files"]}
+            self.assertEqual(rows[long_name]["status"], "failed")
+            self.assertIn("could not write", rows[long_name]["notes"][0])
+            self.assertEqual(rows["z-good"]["status"], "ok")
+            self.assertTrue((out / "z-good.json").exists())
+            self.assertEqual(set(report), {"tool_version", "files", "totals"})
+
+    def test_surrogate_filename_json_roundtrips_as_valid_utf8(self):
+        from deadbits.cli import _dump
+        name = "name-" + chr(0xdcff)
+        payload = _dump({"source_file": name, "text": "caf\u00e9"})
+        payload.decode("utf-8")
+        self.assertEqual(json.loads(payload)["source_file"], name)
+        self.assertIn("caf\u00e9".encode("utf-8"), payload)
+        self.assertNotIn(b"\r\n", payload)
+
+    @unittest.skipIf(os.name == "nt", "POSIX byte filenames only")
+    def test_non_utf8_filename_end_to_end_where_supported(self):
+        from deadbits.cli import run
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            inp, out = root / "in", root / "out"
+            inp.mkdir()
+            raw_name = os.fsencode(inp) + b"/raw-\xff"
+            try:
+                with open(raw_name, "wb") as stream:
+                    stream.write(b"unknown")
+            except OSError as exc:
+                self.skipTest("filesystem rejects invalid UTF-8 filenames: %s" % exc)
+            report = run(inp, out)
+            name = os.fsdecode(b"raw-\xff")
+            self.assertEqual(report["files"][0]["file"], name)
+            self.assertEqual(json.loads((out / (name + ".json")).read_bytes())["source_file"], name)
+
+    def test_invalid_decoder_document_does_not_abort_siblings(self):
+        from unittest.mock import patch
+        from deadbits.cli import run
+        from deadbits.engine import salvage_file
+        from deadbits.model import Result
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            inp, out = root / "in", root / "out"
+            inp.mkdir()
+            (inp / "bad").write_bytes(b"bad")
+            (inp / "good").write_bytes((SAMPLES / "s01.dat").read_bytes())
+            result = Result("bad", "PAK", "ok")
+            result.metadata["bad_number"] = float("nan")
+            with patch("deadbits.cli.salvage_file", side_effect=lambda p: result if p.name == "bad" else salvage_file(p)):
+                report = run(inp, out)
+            self.assertEqual([row["status"] for row in report["files"]], ["failed", "ok"])
+            self.assertTrue((out / "report.json").exists())
+
+    def test_report_basename_collision_is_explicitly_failed(self):
+        from deadbits.cli import run
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            inp, out = root / "in", root / "out"
+            inp.mkdir()
+            (inp / "report").write_bytes(b"unknown")
+            report = run(inp, out)
+            self.assertEqual(report["files"][0]["status"], "failed")
+            self.assertIn("collides", report["files"][0]["notes"][0])
+            self.assertEqual(json.loads((out / "report.json").read_bytes()), report)
+
+    @unittest.skipUnless(os.name != "nt", "POSIX executable launcher")
+    def test_native_executable_launcher_from_other_directory(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "out"
+            process = subprocess.run([str(ROOT / "salvage"), str(SAMPLES), str(output)],
+                                     cwd=directory, capture_output=True, text=True, timeout=30)
+            self.assertEqual(process.returncode, 0, process.stderr)
+            self.assertTrue((output / "report.json").exists())

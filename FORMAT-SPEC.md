@@ -369,3 +369,40 @@ recovery does not pretend to validate that uninterpreted trailer.
 ## Unknown / hostile input
 Anything without a recognised structure -> `UNKNOWN` / `unrecognized` with size, first 64 bytes, strings
 and entropy in `metadata`. Recognised-but-unreadable (e.g. `LB98` + 3 bytes, s29) -> `failed` + `truncated`.
+
+### M3 platform safety policy (2026-10-16)
+* Public modules in `deadbits/formats/` with a contract-approved NAME and callable
+  detect/decode register automatically in sorted order. Private helper modules
+  and the template are ignored. Broken imports/detectors do not mask siblings;
+  invalid result shapes/identity become a failed file, not invalid JSON.
+* File reads are capped at 128MiB before allocation and bounded again while
+  reading to handle growth. Symlinks, FIFOs and other nonregular files are
+  reported failed without following/blocking. Inode/device checks reject a
+  replaced input; O_NOFOLLOW/O_NONBLOCK are used where available.
+* Large legacy detection (>2MiB) sees only a 64KiB prefix, so a corrupt LABLOG
+  header cannot allocate a full-file CRC index before resource refusal. This
+  may deliberately leave an oversized damaged file UNKNOWN when the prefix
+  cannot independently identify it. Recognized budget refusals are failed
+  with lossy `bad_length`; no missing bytes are invented as records.
+* M1/M2 adapters have a conservative 2MiB decode ceiling. Structural-item
+  projections additionally cap LABLOG at 200,000 bytes, WKS at 400,000 bytes,
+  EBCDIC-DUMP at 500,000 bytes. These are safety policies (100,000 minimum-size
+  items), not on-disk format limits. They can refuse a valid sparse file.
+* VAULT independently limits projected work/output to 16MiB each. It charges
+  every physical declared index reference, including aliases, using a 127x RLE
+  expansion upper bound, both candidate orders, Unicode text width and fixed
+  record/name overhead. Declared decoded size cannot reduce the budget.
+* UNKNOWN metadata scans only the first 1MiB, reports analysis_prefix_bytes
+  when sampled, and caps strings at ten of at most 256 characters each.
+* UTF-8/LF JSON escapes undecodable filename bytes losslessly and rejects
+  non-finite numbers. Atomic replacement protects existing output symlink
+  targets; one file's write failure does not stop independent siblings.
+* Input/output directories must differ to avoid overwriting source files.
+  Exact per-file names are kept. A basename already at the filesystem name
+  limit may make its `.json` suffix impossible; basename `report` conflicts
+  with the mandated combined `report.json`. Those cases are explicitly failed
+  in the combined report, whose three top-level keys are preserved. They
+  cannot receive both mandated documents on that filesystem/contract.
+* Existing optional report-row notes carry operational failures. Whether
+  organizers allow extra row keys remains Q2 in PROJECT-HANDOFF.txt; the
+  per-file six-key contract and all status/damage vocabularies are unchanged.
