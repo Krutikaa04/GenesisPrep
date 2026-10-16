@@ -111,7 +111,8 @@ class Modes(unittest.TestCase):
             self.assertIn('historical', out)
             self.assertIn('old-version', out)
             self.assertIn('3.10.1', out)
-            self.assertIn(str(path.parent / 'actual/sample.json'), out)
+            # Windows temporary roots may use an 8.3 alias; CLI resolves the evidence path.
+            self.assertIn(str(path.resolve().parent / 'actual/sample.json'), out)
             self.assertNotIn('Tests:', out)
             self.assertEqual(path.read_bytes(), before)
             self.assertEqual(invoke(['--test', '--evidence-file', str(path)])[0], 1)

@@ -373,3 +373,7 @@ derived from `samples/official/`. Dates are the working-session dates.
   pass; organizer references 7/7. Offline Docker parity remains 31/31
   byte-identical JSON files. Portable-mode diagnostics run outside the source
   checkout in a focused regression; missing resources remain unavailable.
+* First PR CI passed macOS/Linux/build/Docker but exposed a Windows test
+  assumption: its temporary root uses an 8.3 alias while the CLI resolves the
+  saved evidence path. Corrected the artifact-path assertion to use the resolved
+  evidence parent, preserving the intended relative-path check and behavior.
