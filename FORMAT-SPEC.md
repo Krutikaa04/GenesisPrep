@@ -32,6 +32,60 @@ fields are self-delimiting, so the record is recovered if its checksum verifies 
 resync on the next valid record; truncation inside a record keeps only fully read fields (`id`).
 `count_mismatch` only when the file is complete.
 
+
+### M1 hardening decisions (2026-10-16)
+* Length recovery also runs when the declared length goes past EOF. It requires
+  self-consistent fields, a valid record checksum, an ISBN made of digits/`X`, and
+  a valid due date. Otherwise the scan seeks a later validated record/trailer.
+* Deleted/reference-only records remain present. Bits 1/2 remain an **assumption**
+  (organizer question Q1 in PROJECT-HANDOFF.txt); this work does not confirm them.
+* Truncated records intentionally expose only a fully read `id`, with
+  `verified:false` and `issues:["truncated"]`. Other incomplete record fields are omitted.
+* Duplicate IDs are all retained and marked unverified with `invalid_value`;
+  uniqueness is an **assumption**, so duplicate damage is lossless.
+* Version 2 is the only confirmed layout. Other versions attempt that layout,
+  report `unknown_record`, and mark recovered records unverified (**assumption**).
+  Version-2 extended headers use `data_offset`, not a fixed record start.
+* Counts are compared only after a complete trailer; a partial `END!` marker or
+  checksum reports truncation without a secondary count error. An out-of-file
+  data offset is ambiguous (pointer corruption or an extended header cut short):
+  report `oob_pointer`, recover from offset 16 if possible, and report a missing
+  trailer as `truncated` rather than claiming a complete file.
+* Resynchronisation also considers field-delimited checksum-valid records with
+  a damaged length. A stray `END!` in garbage is skipped when a later validated
+  record exists, while a checksum-valid real trailer still ends the record scan.
+  Length recovery rejects undefined text bytes and impossible bodies above 255
+  bytes instead of silently emitting replacement characters as verified text.
+* A damaged file checksum does not invalidate independently checksummed records.
+  Additive checksums are not collision-resistant; compensating byte changes,
+  and the header's unprotected encoding flag, cannot prove original text identity.
+
+
+### M1 reviewed refinements (2026-10-16)
+* Record checksums establish raw bytes, not the header's code-page choice.
+  This refines the earlier trailer-damage policy: ASCII remains independent,
+  while codec-dependent non-ASCII titles/authors are unverified when trailer
+  integrity is unavailable (`checksum_mismatch`, or `truncated` if incomplete).
+  A damaged trailer alone is indistinguishable from a flipped encoding flag;
+  the decoder never guesses an alternate codec to make the text look plausible.
+* Version-2 in-bounds offset repair requires an earlier intact chain of exactly
+  the declared count, a complete final trailer at EOF, and restoration of the
+  stored file checksum by changing only the pointer bytes. At most 256 candidates
+  are tested. More than one valid chain rejects repair. Raw metadata.data_offset
+  is retained; the mismatch is lossless `invalid_value` at byte 12, alongside the
+  actual file checksum damage. Vendor-header bytes are not blindly scanned.
+* Recomputed trailers, compound checksum damage, appended bytes and competing
+  record chains do not establish a unique earlier offset; they remain uncertain.
+  An already intact, count-valid declared chain always wins over an alternative
+  suggested by a trailer checksum error. Additive collisions cannot overturn
+  intact framing evidence.
+* Resynchronization carries its prefix checksum and parsed records advance it
+  on non-overlapping memoryview ranges. Repeated local damage no longer sums
+  the same file prefix repeatedly; additional checksum state is constant-size.
+* A stray `END!` immediately before the real checksum-valid final trailer now
+  reports the inserted gap and finishes at the real trailer. Partial records
+  still expose only a complete ID; partial-field salvage is outside this pass.
+
 ## LABLOG (s05-s07) — instrument data logger
 | Field | Layout | Status |
 |---|---|---|
@@ -46,6 +100,67 @@ resync on the next valid record; truncation inside a record keeps only fully rea
 A CRC-failed block still yields its samples as `verified:false` + `crc_mismatch` when its structure is
 consistent; samples calibrated by a CRC-failed channel table, or timed from a CRC-failed header, are also
 unverified. s07 contains one deliberately corrupted block.
+
+
+### M1 hardening decisions (2026-10-16)
+* A length-corrupted block resynchronises at a later complete CRC-valid block.
+  Lost framing suppresses secondary count errors; later calibrated samples are
+  unverified until a new intact channel table establishes calibration again.
+* A CRC-failed but structurally coherent sample block is retained unverified.
+  Failed header/table CRCs propagate to dependent records; events with a failed
+  block/header CRC are explicitly unverified in metadata too.
+* Truncated sample blocks are dropped in their entirety, including complete rows
+  before the cut (**conservative recovery policy**): without the trailing CRC,
+  genuine truncation cannot be distinguished from a corrupted block length.
+  A partial block header is also `truncated`, without `count_mismatch`.
+* Missing/malformed calibration emits `null` calibrated values and unverified
+  records; raw ADC readings are never passed off as calibrated values. A
+  malformed replacement clears the previous table. Non-finite calibration
+  coefficients yield `null` for affected channels and `invalid_value`.
+* Repeated channel tables report lossless `invalid_value`; the latest table
+  applies to following samples (**assumption**, not organizer-confirmed).
+  If units change, historical samples are unverified because the contract can
+  expose only one channel-unit list for the file.
+  No-channel headers fail with `invalid_value` rather than creating empty rows.
+* Timing evidence: interval is multiplied by 10 (s05 reference proves the unit).
+  All samples use `time_ms = sample * sample_interval_ms`; events carry sample
+  indices, so their relative time uses the same multiplication. No new event
+  time key is added. Using the s05-derived 1990 epoch gives s06
+  `1993-09-01T20:06:50Z` (1000 ms interval) and s07
+  `1994-04-02T21:02:06Z` (250 ms interval). These are **assumptions beyond s05**,
+  checked against header bytes, not independent organizer goldens. No s06/s07
+  reference output exists in this checkout; new golden assertions remain
+  conditional on the organizers publishing those outputs.
+
+
+### M1 reviewed refinements (2026-10-16)
+* Before skipping a damaged length, the known table/sample/event schema supplies
+  one candidate length. Repair is accepted only when restoring those two length
+  bytes makes the original stored CRC match. A CRC-valid original always wins;
+  missing CRCs, incomplete payloads and failed reconstructions remain damaged.
+* If the header CRC fails, a unique channel width corroborated by independent
+  CRC-valid table and sample blocks may replace the damaged count. Ambiguity is
+  rejected. Header-derived uncertainty remains on all records/events via
+  `header_checksum`; no metadata verification keys are introduced.
+* A malformed replacement invalidates future calibration but retains the last
+  usable channel-unit list. Historical unit provenance survives malformed tables,
+  and incompatible later unit lists invalidate earlier samples only once each.
+* Lookahead retains the next validated candidate or an exhausted-suffix flag.
+  Repeated bad blocks no longer rescan the same remaining suffix; historical
+  invalidation also advances monotonically. Magic alone is no longer sufficient
+  recognition: coherent header or independent valid-block evidence is required.
+* Truncated-row salvage remains outside this refinement: incomplete blocks are
+  still dropped unless a complete payload and its original CRC prove a repair.
+
+
+* Dense-marker stress tests also exposed overlapping CRC payload work and
+  premature payload copies. A lazy, exact zero-initialized CRC prefix index
+  now supports every block interval in at most 17 constant lookup steps, shared
+  by lookahead, repairs and header-count inference. Logical prefix storage is
+  2*(input size+1) bytes on supported runtimes; pristine sequential logs avoid
+  allocating it. Candidate payloads remain memoryviews until block selection.
+  This adds bounded linear index memory while removing repeated overlapping
+  hashing and invalid-candidate payload copies. CRC semantics are unchanged.
 
 ## VAULT (s08-s10) — container of notes and scans
 | Field | Layout | Status |
@@ -74,6 +189,55 @@ blocks (BDW u16 BE + u16 zero). `H` title char[20] + run date char[8]; `D` stude
 char[20], dob packed(5) = 0YYYYMMDD+F, gpa packed(3)/100, credits u16 BE, status char, balance
 packed(4)/100 (sign nibble D/B = negative), 2 filler; `T` count packed(4), credits total packed(5).
 Confirmed on s20 expected; trailer totals reconcile on s20/s21 (402, 546).
+
+
+### M1 hardening decisions (2026-10-16)
+* RDWs and BDWs are bounded by the file and enclosing block. Invalid RDW
+  lengths/reserved bytes seek a later complete, schema-consistent known record;
+  a corrupted block descriptor seeks the next credible BDW and marks records
+  recovered under the damaged descriptor unverified. Known header/data/trailer
+  payload sizes are 29/44/10 bytes, excluding the four-byte RDW.
+* A next block's first RDW may itself be damaged: its known payload schema can
+  still establish that BDW boundary. A record never consumes bytes across an
+  established block boundary. This recovery policy is an **assumption** based on
+  the sample generator's fixed schemas, not a general-purpose mainframe parser.
+* Framing loss/truncation suppresses derivative trailer count/credits errors.
+  Missing trailers report truncation; incomplete records are dropped rather than
+  inventing partial student fields. Outer-block and inner-record truncation from
+  the same EOF cut produce one root damage report.
+* Empty/invalid packed fields return unavailable values; invalid dates, digit or
+  sign nibbles flag records. Packed signs B/D are negative, A/C/E/F positive.
+  Invalid trailer totals are `invalid_value`, not usable reconciliation evidence.
+* A credits-total disagreement cannot identify whether a record or trailer is
+  wrong: keep every recovered record but mark them unverified with
+  `checksum_mismatch`. This total is not a checksum over the other record fields.
+* Detection needs a credible cp037 header/date, or a sufficiently long printable
+  prefix of a truncated known-length header. A lone `H` byte after zeros is
+  insufficient. Descriptor corruption alone need not erase header recognition.
+* RECFM F support was assessed and is intentionally not inferred: no F sample,
+  reference, LRECL, or padding convention is supplied. Removing RDWs creates
+  variable-sized H/D/T payloads, which is not evidence of a fixed-length format.
+  Such files remain unrecognized; no speculative adapter path is added.
+* There is no per-record integrity checksum. Plausible changes to names, IDs,
+  dates, GPA, status or balance can pass structural validation undetected.
+
+
+### M1 reviewed refinements (2026-10-16)
+* VB boundary evidence now uses known RDW framing independently of the first
+  student's semantic field validity. A damaged first RDW may be bounded by its
+  fixed schema and an intact following RDW; the damaged record is still dropped,
+  while its intact sibling remains recoverable. An intact RDW length plus a
+  coherent following sibling also preserves the boundary if the first record's
+  type byte is unknown or inconsistent. No partial-field salvage is added.
+* A damaged header date/title can still identify the format when the header
+  descriptor and two credible student records independently establish framing.
+  Detection inspects at most eight records. With fewer independent records,
+  damaged-header files may deliberately remain unrecognized.
+* Printable cp037 accents are valid text; control-corrupt title, name or status
+  fields become null with `invalid_value`. Affected students are unverified.
+  No undocumented GPA/status domain restrictions are introduced.
+* Resynchronization filters fixed schema lengths before slicing payloads, so
+  hostile large descriptors cannot repeatedly copy large payload suffixes.
 
 ## PAK (s24) and WAD (s23) — game archives
 PAK: `PACK`, dir_off u32, dir_len u32; 64-byte entries name[56] + offset u32 + size u32.

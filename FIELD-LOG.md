@@ -18,6 +18,43 @@ derived from `samples/official/`. Dates are the working-session dates.
   bit0 = 1. s02 uses cp437 (`0x82` = é).
 * Open: flag bits 1-2 meaning (deleted / reference_only) cannot be confirmed from the 2 reference files.
 
+
+* M1-1/2 (2026-10-16): added the LIBRA damage matrix and semantics tests.
+  Oversized record lengths originally bypassed field recovery and swallowed
+  later intact records; recovery now precedes the EOF decision. Partial trailer
+  checksums also used to allow a spurious count mismatch; now suppressed.
+* Duplicate IDs are preserved and flagged, not silently collapsed. Unknown
+  versions are attempted conservatively and flagged on every recovered record.
+* Invalid ISBN bytes and undefined text bytes now produce `invalid_value`.
+  Failed test hypothesis: a low DOS-date byte of `0xFF` is always invalid; it
+  actually encodes July 31. The invalid-date mutation uses day zero instead.
+* Final review: a stray `END!` inside inserted garbage could stop recovery before
+  later good records; resynchronisation now distinguishes this from a real
+  checksum-valid trailer. Added bad-length resynchronisation and undefined-text
+  recovery tests, plus 640 seeded compound-damage direct decoder cases.
+* Validation: 36 tests passed with Python 3.12.14; reference comparison 7/7.
+  System Python 3.9 cannot run the existing CLI fixture's
+  `TemporaryDirectory(ignore_cleanup_errors=True)`; no M3 file was changed.
+
+
+* Review/refinement pass (2026-10-16): flipping the s03 header codec flag changed
+  Alice's/Schloss text while record checksums passed. Codec-dependent fields
+  now carry uncertainty when the trailer cannot establish header integrity;
+  no alternate codec is guessed. ASCII-only records retain independent trust.
+* In-bounds bad offsets skipped checksum-valid prefix records. Repair now needs
+  a unique earlier full chain plus the stored checksum after only pointer repair.
+  A genuine fixture with two overlapping valid chains (offsets 16 and 271,
+  equal pointer byte sums) confirms that ambiguous candidates are rejected.
+* Repeated prefix sums made resynchronization quadratic. Carrying checksum state
+  makes measured checksum work linear with constant extra checksum memory.
+  Added deterministic byte-work guards and independent vendor/compound-damage
+  negative controls. A stray final END! gap now reaches the validated trailer.
+* Cross-review found a stronger additive-collision case: valid chains at 16/270
+  and a trailer-only +1 error could select the wrong earlier chain. Offset repair
+  now refuses to override an intact declared chain, even when one alternative
+  restores the checksum. The genuine nested-chain regression preserves both
+  declared records and reports only the actual trailer mismatch.
+
 ### LABLOG (s05-s07)
 * H1 `start` is unix time. **Failed**: gives 1972-10-11T05:07:43Z - right month/day/time, year 20 too low.
 * H2 epoch 1990-01-01. **Confirmed**: `1992-10-11T05:07:43Z` (s05 expected).
@@ -27,6 +64,51 @@ derived from `samples/official/`. Dates are the working-session dates.
 * H5 block CRC: tested sum/xor/CRC16 variants over several spans; CRC-16/CCITT-FALSE over `type..payload`
   matched 7/7; header CRC over bytes 0..29 matched.
 * H6 only raw -32768 is a dropout. Confirmed by expected `-10091.5` (raw -20224 is a real value).
+
+
+* M1-3/4 (2026-10-16): added LABLOG block/header CRC, corrupt-length
+  resynchronisation, unknown-type, truncation, count, calibration replacement,
+  missing/zero-channel, malformed event/sample and non-finite float tests.
+* Failed policy: emitting raw values without calibration violates the meaning
+  of `values[]`; now unavailable calibrated values are null and unverified.
+  Failed replacement tables used to leave an older calibration trusted; now
+  cleared. Skipped framing also taints later calibration until a good table.
+* Truncated data blocks remain dropped: complete rows alone cannot establish
+  integrity when the block CRC is absent. This is an explicit conservative choice.
+* s06/s07 tests read header/event facts and confirm dropout / damaged-block
+  handling. They do not claim independent confirmation of the inferred epoch.
+  s06/s07 organizer goldens are not present in the supplied kit.
+* Final review: a new table with changed units makes historical samples
+  ambiguous under the contract's one channel list; those samples are now
+  unverified. Added the regression plus 384 seeded compound-damage cases.
+* Validation: 54 tests passed with Python 3.12.14; reference comparison 7/7.
+
+
+* Review/refinement pass (2026-10-16): six corrupt length values on s05 dropped
+  4/22 samples even though reconstructing only the length made the stored CRC
+  verify. Table/sample/event lengths now use this narrowly validated repair.
+  Tests reject changed CRC/payload, incomplete payload, and ambiguous evidence.
+* A damaged header channel count can be independently corroborated by intact
+  table and sample widths. Unique support restores data without concealing the
+  failed header CRC; zero-channel headers with a valid CRC remain rejected.
+* Valid -> malformed -> changed-unit tables lost historical unit provenance.
+  The last known unit list is retained separately from calibration validity.
+  Repeated table changes now invalidate each historical sample at most once.
+* The former CRC lookahead repeatedly scanned the suffix for every bad block.
+  A constant-size next-candidate/EOF cache removes that repeated scan. Added
+  independent fixtures, engine-level negatives, repair rejection controls, and
+  deterministic CRC-work and historical-invalidation operation guards.
+
+
+* Cross-review found that a forward marker cursor alone did not bound CRC work:
+  dense overlapping payload candidates still took almost six seconds at 13KB.
+  Added a lazy exact interval-CRC index, independently checked against bitwise
+  CRC for random/empty/max-length intervals and all 65,536 initial states.
+  Deterministic operation guards count prefix bytes, range-shift steps and
+  ordinary CRC bytes for dense markers and overlapping repair attempts.
+* Main probes could also copy overlapping invalid payloads before selection.
+  They now use memoryviews; instrumentation bounds selected payload copies by
+  input size. Pristine sequential logs do not allocate the interval index.
 
 ### VAULT (s08-s10)
 * H1 whole file XORed with a constant key. **Failed** (no key reveals text).
@@ -51,6 +133,41 @@ derived from `samples/official/`. Dates are the working-session dates.
 * H2 file = plain RDW stream. **Partly failed**: s21 is blocked (BDW 4 bytes before each block).
 * H3 dob = packed `YYYYMMDD`. **Corrected**: 5 bytes = `0YYYYMMDD` + sign nibble F.
 * Trailer credits total equals sum of credits (402 on s20, 546 on s21) - used for `checksum_mismatch`.
+
+
+* M1-5 (2026-10-16): added RDW/BDW length and reserved-byte corruption,
+  trailer count/credits mismatch, inner/outer truncation, malformed short
+  trailer, invalid packed fields/date, B/D negative balances, unknown types,
+  strict detection and direct decoder safety tests.
+* Found and fixed: empty packed-decimal input raised IndexError; trailer code
+  parsed slices before checking length. Record lengths are now checked first,
+  and packed parsing returns None on empty input.
+* Failed boundary hypothesis: recognizing the next BDW required its first RDW
+  to be intact. A damaged first RDW made the previous block swallow that whole
+  block. Known payload sizes/content now independently establish the boundary.
+* Descriptor damage resynchronises instead of abandoning all subsequent records;
+  recovered records under a damaged BDW are unverified. Credits disagreement
+  marks every candidate record unverified because the culprit is unknown.
+* RECFM F feasibility review: no supplied fixture establishes LRECL/padding, so
+  guessing fixed boundaries would invent evidence. Both unframed mixed-length
+  and synthetic padded payloads are explicitly rejected by detection tests.
+* Final review added 384 seeded compound-damage cases. Across M1, the final
+  suite has 82 passing tests and reference comparison remains 7/7.
+* Validation: 75 tests passed with Python 3.12.14; reference comparison 7/7;
+  s20/s21 remain ok and s22 remains partial with one truncation root cause.
+
+
+* Review/refinement pass (2026-10-16): invalid DOB in the next VB block's first
+  student made the preceding BDW look invalid and lost both students in that
+  block. Boundary proofs now use framing instead of semantic student validity.
+  Corrupt first-RDW reserved bytes also preserve the intact sibling.
+* Direct-only invalid-header-date tests hid a dispatch failure: end-to-end
+  salvage returned UNKNOWN with zero students. Added bounded independent
+  record evidence plus engine/CLI regressions and strict negative controls.
+* Independent synthetic V/VB fixtures exposed another generalization issue:
+  printable accented cp037 names were rejected by ASCII-only credibility.
+  Printable accents are now accepted, while control-corrupt fields are null
+  and unverified. Tests also guard bounded detection and payload-scan work.
 
 ### CVT (s18-s19)
 * H1 signature at 0x21. **Failed** (detection missed every file); it starts at 0x1E (`PRG formatted ...`).
