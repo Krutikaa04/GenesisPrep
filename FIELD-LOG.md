@@ -225,6 +225,26 @@ derived from `samples/official/`. Dates are the working-session dates.
 * BRAVO trailer: 15 and 17 bytes after 0x1A; could not derive a consistent run record from two samples,
   so it is intentionally not decoded (bonus field).
 
+* M3-2: original libwpd WP5 framing evidence rejected the old blanket
+  C0-CF=3, D0-DF=4, E0-EF=6 and F0-FF=size+5 hypotheses. Only C3/C4 were
+  sample-backed. Individual fixed widths and mirrored variable framing are
+  implemented independently; payload text is never guessed after framing loss.
+* The kit advertises version 2.0 but uses WP5-style gates and a custom text-end
+  word. Rejected general support for unrelated WPC product/version profiles.
+* A valid delimiter does not prove a group's contents are formatting only.
+  Unseen semantic groups now report unknown_record and taint only the affected
+  paragraph. C0 character tables remain unsupported; no third-party tables copied.
+* M3-3: stricter BRAVO negatives reject DOS EOF text, text/NUL-only suffixes,
+  short prefixes and malformed marker framing. CR empty paragraphs remain.
+  High-byte/control text is replaced only during independently identified
+  direct salvage, with explicit uncertainty; detection does not guess a codec.
+* Uniform run-record hypotheses still do not explain both BRAVO trailers.
+  The optional format_runs bonus is deliberately omitted.
+* Dense CR text exposed output expansion despite the input-byte guard. Both
+  document decoders now bound records (100,000) and text (8MiB), with explicit
+  loss reports. Operation-count tests verify parsing stops at the budget and
+  skips intact large functions without scanning payload characters.
+
 ### Hardening findings (mutation suite over all 30 samples)
 * Flipping the LIBRA header encoding flag re-decodes text under another code page while record checksums
   still pass -> invariant restricted to non-text fields (text can legitimately differ).
