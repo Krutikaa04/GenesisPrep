@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from helpers import ROOT, SAMPLES, STATUSES, KINDS
+from helpers import CAN_SYMLINK, ROOT, SAMPLES, STATUSES, KINDS, SYMLINK_SKIP_REASON
 
 
 def _bash_works() -> bool:
@@ -147,7 +147,7 @@ class CliSafety(unittest.TestCase):
             self.assertEqual(main([directory, directory]), 0)
             self.assertEqual(source.read_bytes(), b"precious source bytes")
 
-    @unittest.skipUnless(hasattr(os, "symlink"), "symlinks unavailable")
+    @unittest.skipUnless(CAN_SYMLINK, SYMLINK_SKIP_REASON)
     def test_symlinks_are_failed_and_output_symlinks_are_replaced_safely(self):
         from deadbits.cli import run
         with tempfile.TemporaryDirectory() as directory:

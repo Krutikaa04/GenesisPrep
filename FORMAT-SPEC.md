@@ -358,7 +358,15 @@ printable ASCII text (TAB/LF allowed), one delimiter, then a 4..512-byte trailer
 with at least two NULs and a non-whitespace control byte. Plain DOS EOF text,
 textual/NUL-only trailers, short prefixes and multiple delimiters are rejected.
 
-Missing-marker/high-byte text cannot be safely auto-identified. When identity
+**Damaged text (assumption):** when the 0x1A marker, a preceding CR and a valid trailer are intact, at least 70% of the
+paragraph bytes must still be text bytes (printable ASCII, CR, LF, TAB) for recognition (confidence 0.6, below clean
+text at 0.8). Bytes outside the text set become U+FFFD + `invalid_value`; because a damaged byte may have been a CR
+delimiter, every paragraph after the first damaged one is `verified:false` (`invalid_value`, one lossless damage entry
+says numbering is uncertain). **Truncated files (assumption, confidence 0.55):** with no marker, or a marker followed by fewer than 4 trailer bytes
+(all control bytes), a file is recognised when it is < 64 KiB, has >= 32 text bytes of printable ASCII/TAB/CR only (no
+LF) and >= 3 CR-terminated paragraphs. Complete paragraphs stay verified; the final cut paragraph is unverified; a
+lossy `truncated` damage entry reports the lost trailer. Other CR-only text would match too; DOS/Unix text, binary
+and the kit junk files do not. When identity
 is independently known, direct decoding preserves CR paragraphs, marks an
 unterminated final paragraph unverified, reports a missing marker as truncated,
 and replaces unsupported bytes with U+FFFD + `invalid_value`. Independent

@@ -320,3 +320,11 @@ derived from `samples/official/`. Dates are the working-session dates.
   flipped to 0x30 reads as a valid "0"; PAK/WAD payload hashes (no stored hash or checksum); EBCDIC pad byte
   flipped to a valid cp037 character (accented letters are legitimately allowed). Organizer-reference false
   verified 5 -> 1, regression baseline 5 -> 4.
+
+* BRAVO recovery (measured with tools/evaluate.py): BRAVO regression recovery 10/60 -> 41/60 keys, 34/60 complete, 0 false
+  verified. Cause of the old failures: recognition needed a fully printable text prefix, so one flipped byte or a
+  zeroed block mid-text made the whole file UNKNOWN even with the trailer intact (4 of 12 cases). Fix: trailer + marker
+  prove the layout, text only needs to be >= 70% text bytes; paragraphs after damage are unverified because lost CRs
+  shift paragraph numbers. Truncated files (no marker/trailer) are now recognised at confidence 0.55 from CR-only
+  ASCII text (>= 3 paragraphs, >= 32 bytes, no LF, < 64 KiB): s16 cut at 50%/90% and s17 at 90% decode; the 10% cuts
+  (no CR yet) and s17's 50% cut (only 2 CRs) stay UNKNOWN. Trade-off: other CR-only text would be misidentified.

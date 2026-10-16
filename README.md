@@ -99,8 +99,8 @@ Remaining recognized sources use verified pristine decoder output as a
 | PAK | 6 | 13/24 | 13/24 | 1 | 0 |
 | WAD | 6 | 24/42 | 22/42 | 2 | 0 |
 | WPD | 12 | 36/48 | 29/48 | 0 | 0 |
-| BRAVO | 12 | 10/60 | 10/60 | 0 | 0 |
-| **Total** | **107** | **488/789 (61.9%)** | **458/789 (58.0%)** | **4** | **0** |
+| BRAVO | 12 | 41/60 | 34/60 | 0 | 0 |
+| **Total** | **107** | **519/789 (65.8%)** | **482/789 (61.1%)** | **4** | **0** |
 
 Unknown originals stayed UNKNOWN in all 24 changed cases. Zero-record
 baselines have no recovery percentage. Original unverified records and optional
@@ -142,7 +142,9 @@ experiments in [FIELD-LOG.md](FIELD-LOG.md).
 - PAK/WAD recover at most 100,000 entries, with hash work at most four times
   input size. WPD/BRAVO cap text at 8MiB and records at 100,000. Excluded data
   is reported as loss; omitted hashes/text are never fabricated.
-- BRAVO has no magic: cut/missing-trailer files may remain unknown. Its optional
+- BRAVO has no magic: it is recognised from its marker and trailer. Truncated files are recognised only at low
+  confidence from CR-paragraph text alone, so other CR-only text could be misidentified; files cut before three
+  paragraphs remain unknown. Its optional
   formatting-run layout remains unproved. WPD support follows the kit's header
   profile; unimplemented function semantics are flagged rather than guessed.
 - Filesystem limits can make the required output impossible: names too long
