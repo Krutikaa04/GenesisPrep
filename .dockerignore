@@ -7,3 +7,7 @@ tests
 tools
 _o
 out*
+.docker-check.*
+.gitignore
+*.md
+*.txt

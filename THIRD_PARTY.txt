@@ -1,0 +1,16 @@
+DeadBits / PS 02 Salvage
+
+No third-party implementation code or runtime packages are included in this
+project. The CLI, adapters, evaluation tools and tests use Python's standard
+library only. They make no network or AI/LLM calls.
+
+Organizer-provided sample files and expected outputs remain unchanged in
+samples/official/. They are test data, not an implementation dependency.
+
+During M3 development, WP5 binary framing facts were checked against original
+libwpd project documentation/source. The framing logic here was independently
+written; no libwpd source, libraries, character tables or dependencies are
+copied or bundled. Development-time sources are linked in FORMAT-SPEC.md.
+
+Python and the Docker base operating system are separately distributed tools
+with their own licenses; their packages are not vendored into this repository.

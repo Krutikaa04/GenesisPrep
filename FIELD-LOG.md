@@ -206,12 +206,44 @@ derived from `samples/official/`. Dates are the working-session dates.
 ### PAK / WAD (s23, s24)
 * Standard layouts; directory ends exactly at EOF in both. WAD names carry garbage after the NUL (ignored).
 
+* M3-1: independent fixtures and sample mutations now cover huge counts,
+  duplicates, nested overlaps, header/directory overlap, empty markers, magic
+  variants, incomplete directories and trailing bytes. Intact s23/s24 hashes
+  and statuses are unchanged.
+* Direct WAD decoding previously raised UnicodeDecodeError for non-ASCII magic;
+  both archive decoders now validate their magic without raising.
+* Physical count bounds did not bound repeated overlapping payload hashes.
+  Exact aliases now share digests, while unique ranges share a 4x-input byte
+  budget. Instrumented tests prove memoryview hashing and bounded byte work.
+* Rejected pairwise overlap reporting as quadratic in time and output size.
+  A sorted interval sweep retains ambiguous entries and marks each component.
+
 ### WPD / BRAVO (s14-s17)
 * WPD encryption key sits at 0x0C and is 0 in both samples; hint says some files are protected -> non-zero
   = `unsupported`. s15 declares text up to byte 223 in a 136-byte file => truncated.
 * 0xAA treated as a soft hyphen (dropped) - unverified guess.
 * BRAVO trailer: 15 and 17 bytes after 0x1A; could not derive a consistent run record from two samples,
   so it is intentionally not decoded (bonus field).
+
+* M3-2: original libwpd WP5 framing evidence rejected the old blanket
+  C0-CF=3, D0-DF=4, E0-EF=6 and F0-FF=size+5 hypotheses. Only C3/C4 were
+  sample-backed. Individual fixed widths and mirrored variable framing are
+  implemented independently; payload text is never guessed after framing loss.
+* The kit advertises version 2.0 but uses WP5-style gates and a custom text-end
+  word. Rejected general support for unrelated WPC product/version profiles.
+* A valid delimiter does not prove a group's contents are formatting only.
+  Unseen semantic groups now report unknown_record and taint only the affected
+  paragraph. C0 character tables remain unsupported; no third-party tables copied.
+* M3-3: stricter BRAVO negatives reject DOS EOF text, text/NUL-only suffixes,
+  short prefixes and malformed marker framing. CR empty paragraphs remain.
+  High-byte/control text is replaced only during independently identified
+  direct salvage, with explicit uncertainty; detection does not guess a codec.
+* Uniform run-record hypotheses still do not explain both BRAVO trailers.
+  The optional format_runs bonus is deliberately omitted.
+* Dense CR text exposed output expansion despite the input-byte guard. Both
+  document decoders now bound records (100,000) and text (8MiB), with explicit
+  loss reports. Operation-count tests verify parsing stops at the budget and
+  skips intact large functions without scanning payload characters.
 
 ### Hardening findings (mutation suite over all 30 samples)
 * Flipping the LIBRA header encoding flag re-decodes text under another code page while record checksums
@@ -220,3 +252,63 @@ derived from `samples/official/`. Dates are the working-session dates.
   verified -> those samples are now `verified:false`; likewise when the header CRC fails (time_ms).
 * Damage offsets could point past EOF (CVT cut inside block 1) -> clamped to the file size.
 * A corrupted LIBRA length byte swallowed the next intact record -> field-based recovery + rescan.
+
+* M3 platform: corrected the handoff's stale auto-discovery claim; the engine
+  previously used a manual registry. Public-module discovery, private template,
+  import isolation and invalid-score/result tests now support controlled
+  extension without editing the registry. New format names still need the
+  integrator's contract-vocabulary change.
+* Fixed the launcher's missing executable bit. Added regular-file-only reads,
+  bounded size checks, replacement checks, atomic output and strict JSON/result
+  shape checks. Tested permission errors, FIFOs, input/output symlinks, hostile
+  names, nonfinite output and output failures without stopping siblings.
+* Invalid-byte filename JSON roundtrips via escapes. This macOS filesystem
+  rejects creating such a filename (EILSEQ); the end-to-end test is skipped
+  here and exercised on Linux CI. Serialization itself is tested everywhere.
+* Found irreconcilable naming edge cases: a 255-byte basename plus `.json`
+  exceeds the filesystem limit, and source basename `report` collides with the
+  combined report. These now report failure instead of silently stopping or
+  overwriting a per-file result with a successful claim.
+* Resource review rejected a common records-only cap: WKS accumulates cells in
+  local dictionaries, LABLOG has metadata events, and aliased VAULT compressed
+  payloads expand independently. Conservative preflight estimates now bound
+  those adapters without editing M1/M2 files; refusals are explicit.
+* Detection itself needed a guard: damaged large LABLOG headers could allocate
+  the lazy CRC index before decoding was refused. Oversized legacy detection
+  now uses a 64KiB prefix; an independent test verifies the full file never
+  reaches that detector. UNKNOWN analysis is separately prefix-bounded.
+* Cross-review found `REPORT`/`Report` also alias the combined report on
+  case-insensitive volumes. Actual output file identity now detects reserved
+  aliases and previously produced output collisions in constant-time lookup;
+  the first result is preserved and later conflicts are explicitly failed.
+  Tests cover both filesystem case policies and an output alias introduced
+  between sibling writes.
+
+* M3-5 evaluation: deterministic 10/50/90% truncation, one-byte-short,
+  midpoint XOR and centered zero-block variants cover all 30 samples. The
+  persisted manifest records hashes/parameters and rejects altered variants.
+  Seven organizer references are scored independently; remaining recognized
+  samples use verified pristine output as a clearly labeled regression baseline.
+* Measured 180 variants, 173 changed and 7 no-ops (excluded from summary rates),
+  zero decoder crashes. Organizer-reference recovery: 251/366 keys, 227/366
+  complete records, five false verified records. Regression-only: 488/789 keys,
+  458/789 complete records, five false verified. Unknown originals stayed
+  UNKNOWN in all 24 changed cases; zero-record recovery rates are null.
+* False verified cases are visible rather than hidden: reference cases are
+  CVT/VAULT/WKS; regression cases include EBCDIC/VAULT and archive payload hashes.
+  Structural consistency cannot detect every plausible in-bounds corruption
+  without an integrity checksum. This corpus does not predict hidden judging.
+  Full measured ledger: reports/m3-evaluation.json; rerun tools/evaluate.py.
+
+* M3-6 release validation: 327 tests run on Python 3.12 (326 passed; one macOS filename
+  fixture skipped because APFS rejects invalid UTF-8 names); Linux CI passed
+  all 327 with no skip. Organizer references match 7/7. Native and Docker runs
+  over all 30 samples produced31 byte-identical JSON files under --network none,
+  a read-only root, dropped capabilities and an unprivileged user. The same
+  parity check also passed on the integrated origin/master baseline 9dc9754.
+* The pinned Python base was preloaded during development. Dockerfile RUN steps
+  build with networking disabled; runtime/tests introduce no network dependency.
+  GitHub workflow repeats tests, evaluation and isolated Docker parity.
+* Branch protection could not be enabled: the authenticated collaborator has
+  push access but GitHub reports admin:false/maintain:false. Reviewed-PR-only
+  workflow remains required; an owner must configure server-side enforcement.

@@ -4,7 +4,8 @@ Layouts reverse-engineered from the organizers' kit (30 samples + 7 reference ou
 is marked **confirmed** (matches a reference output and/or a checksum/size that validates on every
 sample of that format) or **assumption** (consistent with the samples but not independently
 verifiable). All integers little-endian unless stated. Source of truth: the bytes in
-`samples/official/`; no third-party parser or specification was used or copied.
+`samples/official/`. M3 also checked WP5 framing facts against the original libwpd project
+implementation during development; no third-party implementation code or dependency is bundled.
 
 ## Common behaviour
 * Detection needs the format's own signature/structure; the file extension is never used.
@@ -270,6 +271,28 @@ WAD: `IWAD`/`PWAD`, numlumps u32, dir_off u32; 16-byte entries offset u32, size 
 No per-entry checksum exists, so in-bounds payload corruption is undetectable (stated limitation).
 Confirmed: structure fully accounts for s23/s24 (directory ends exactly at EOF).
 
+### M3 archive hardening (2026-10-16)
+* Decode at most 100,000 physically complete entries. Declared counts stay in
+  metadata; excluded entries produce lossy `bad_length`, never an `ok` result.
+* Payloads must fit outside the header/directory. Invalid entries retain raw
+  directory facts, omit SHA-256, and carry `verified:false` / `oob_pointer`.
+* Duplicate names and overlapping nonempty ranges are retained and marked
+  unverified with lossless `invalid_value`. **Policy assumption:** either may
+  be intentional, but the intended identity/range cannot be established.
+* Zero-byte markers hash empty bytes without dereferencing their raw pointer
+  (**policy assumption** for PAK as well as WAD). Adjacent ranges do not overlap.
+* Hashing uses memoryviews and exact-range caching. Unique hashes consume at
+  most 4 times the input size; budget-excluded hashes are omitted and flagged
+  with lossy `bad_length`. Alias reuse remains available after exhaustion.
+* Duplicate lookup is linear; a sorted interval sweep reports one warning per
+  connected overlap component in O(n log n), rather than every overlapping pair.
+* Only PACK/IWAD/PWAD are supported. Bare magic is insufficient; damaged count
+  or directory length needs independent credible entry evidence among at most
+  eight entries. Complete directory loss prevents evidence-based recovery.
+* Empty/control-containing names are retained unverified. Bytes after a name's
+  first NUL remain ignored. A calculated hash proves selected bytes, not their
+  identity before corruption; these formats contain no integrity checksum.
+
 ## CVT (s18-s19) — Commodore 64 GEOS convert
 254-byte blocks. Block 0: type, name char[16] PETSCII (0xA0 padded) at 3, structure u8 at 0x15
 (0 seq, 1 vlir), geos_type at 0x16, date year-1900/month/day/hour/minute at 0x17, declared_blocks u16
@@ -291,21 +314,97 @@ never mapped to a guessed character. The VLIR structure has no reference output 
 and `(0,0xFF)` as unused, and the count of blocks after block 0 are assumptions confirmed only by s19's internal
 consistency.
 
-## WPD (s14-s15) — WordPerfect 5.x document
-`FF 57 50 43`; doc area pointer u32 at 4; encryption key u16 at 0x0C (non-zero -> `unsupported` +
-`encrypted`, no text); u16 at 0x22 = end of text (beyond EOF -> `truncated`, s15). Text: 0x0A ends a
-paragraph, 0x0C page break, 0x0D soft return -> space, 0xC0-0xCF/0xD0-0xDF/0xE0-0xEF fixed-length
-function codes skipped (`C3 0C C3` bold on, `C4 0C C4` off). **Assumptions (no reference output):**
-0xA0 -> ordinary space, 0xA9 -> `-`, **0xAA is a soft hyphen and is dropped** (`co-operation`
-becomes `cooperation`), paragraph/page_break record shape. The trailing summary strings after the
-text pointer are ignored.
+## WPD (s14-s15) — WordPerfect document profile
+The kit has `FF 57 50 43`, product 1, file type 10, version 2.0, a document
+pointer u32 at 4, and a kit-specific text-end u16 at 0x22. Encryption key u16
+at 0x0C nonzero means `unsupported` + `encrypted`, with no text emitted.
+The text stream uses WP5-style function gates although the version byte is
+associated with WP6 elsewhere. **Scope assumption:** only this kit-backed
+header/text profile is decoded; other product/type/version combinations are
+recognized conservatively and reported `unsupported` / `unknown_record`.
+
+WP5 framing facts were checked against original [libwpd fixed-group source](https://sourceforge.net/p/libwpd/code/ci/master/tree/src/lib/WP5FixedLengthGroup.cpp)
+and [variable-group source](https://sourceforge.net/p/libwpd/code/ci/master/tree/src/lib/WP5VariableLengthGroup.cpp):
+* C0-CF total widths: 4,9,11,3,3,5,6,7,4,5,6,6,8,10,10,12.
+* D0-FF framing: gate, subgroup, u16 size, payload(size-4), u16 size,
+  subgroup, gate. Total width is size+4, minimum size 4. Mirrored size,
+  subgroup and closing gate must agree inside the declared text region.
+* Only C3/C4 formatting gates occur in the kit. Other function layouts are
+  independent implementation evidence, not organizer-confirmed coverage.
+  Delimiting a group does not establish its text semantics: unimplemented
+  groups are skipped with lossy `unknown_record` and the affected paragraph
+  is unverified. C0 extended characters use U+FFFD rather than invented tables.
+* Ambiguous function framing stops recovery at that boundary. Independent
+  earlier paragraphs remain; an incomplete text prefix is unverified, and
+  payload bytes cannot leak into apparently verified paragraphs.
+* Hard LF ends a paragraph; FF emits a page-break record. Text on later pages,
+  empty hard-return paragraphs and tabs are preserved. Soft page/return map
+  to space. **Retained kit assumptions:** A0 ordinary space, A9 hyphen,
+  AA dropped discretionary hyphen. Unknown bytes become U+FFFD and are flagged.
+* A text-end past EOF produces truncation (s15); trailing summary bytes never
+  complete a cut function. At most 8MiB of text and 100,000 records are decoded;
+  budget loss is explicitly partial + lossy `bad_length`.
+No organizer WPD reference exists: s14/s15 text checks are regression evidence.
 
 ## BRAVO (s16-s17) — Xerox Alto editor
-No magic. Text of CR-terminated paragraphs (empty paragraphs kept), then `0x1A`, then a binary
-formatting trailer. **Assumptions:** paragraph boundaries = CR; trailer (format runs) is not decoded
-and never raises damage because its structure could not be confirmed from two samples. Detection is
-structural (printable prefix with CRs, one 0x1A, short trailer).
+There is no magic. CR-delimited paragraphs, including empty paragraphs, precede
+0x1A and a binary trailer (15 bytes in s16, 17 in s17).
+**Sample-based recognition assumptions:** at least 8 bytes of CR-terminated
+printable ASCII text (TAB/LF allowed), one delimiter, then a 4..512-byte trailer
+with at least two NULs and a non-whitespace control byte. Plain DOS EOF text,
+textual/NUL-only trailers, short prefixes and multiple delimiters are rejected.
+
+Missing-marker/high-byte text cannot be safely auto-identified. When identity
+is independently known, direct decoding preserves CR paragraphs, marks an
+unterminated final paragraph unverified, reports a missing marker as truncated,
+and replaces unsupported bytes with U+FFFD + `invalid_value`. Independent
+paragraphs stay intact. Recognition/text scans are capped at 8MiB; decoding also
+caps records at 100,000. Exhaustion retains prior records with explicit lossy
+`bad_length`; a cut current prefix remains unverified.
+
+**Unproved bonus:** no consistent start/length/font/look layout was established
+for both trailers. `metadata.format_runs` remains absent, and direct text
+recovery does not pretend to validate that uninterpreted trailer.
 
 ## Unknown / hostile input
 Anything without a recognised structure -> `UNKNOWN` / `unrecognized` with size, first 64 bytes, strings
 and entropy in `metadata`. Recognised-but-unreadable (e.g. `LB98` + 3 bytes, s29) -> `failed` + `truncated`.
+
+### M3 platform safety policy (2026-10-16)
+* Public modules in `deadbits/formats/` with a contract-approved NAME and callable
+  detect/decode register automatically in sorted order. Private helper modules
+  and the template are ignored. Broken imports/detectors do not mask siblings;
+  invalid result shapes/identity become a failed file, not invalid JSON.
+* File reads are capped at 128MiB before allocation and bounded again while
+  reading to handle growth. Symlinks, FIFOs and other nonregular files are
+  reported failed without following/blocking. Inode/device checks reject a
+  replaced input; O_NOFOLLOW/O_NONBLOCK are used where available.
+* Large legacy detection (>2MiB) sees only a 64KiB prefix, so a corrupt LABLOG
+  header cannot allocate a full-file CRC index before resource refusal. This
+  may deliberately leave an oversized damaged file UNKNOWN when the prefix
+  cannot independently identify it. Recognized budget refusals are failed
+  with lossy `bad_length`; no missing bytes are invented as records.
+* M1/M2 adapters have a conservative 2MiB decode ceiling. Structural-item
+  projections additionally cap LABLOG at 200,000 bytes, WKS at 400,000 bytes,
+  EBCDIC-DUMP at 500,000 bytes. These are safety policies (100,000 minimum-size
+  items), not on-disk format limits. They can refuse a valid sparse file.
+* VAULT independently limits projected work/output to 16MiB each. It charges
+  every physical declared index reference, including aliases, using a 127x RLE
+  expansion upper bound, both candidate orders, Unicode text width and fixed
+  record/name overhead. Declared decoded size cannot reduce the budget.
+* UNKNOWN metadata scans only the first 1MiB, reports analysis_prefix_bytes
+  when sampled, and caps strings at ten of at most 256 characters each.
+* UTF-8/LF JSON escapes undecodable filename bytes losslessly and rejects
+  non-finite numbers. Atomic replacement protects existing output symlink
+  targets; one file's write failure does not stop independent siblings.
+* Input/output directories must differ to avoid overwriting source files.
+  Exact per-file names are kept. A basename already at the filesystem name
+  limit may make its `.json` suffix impossible; basename `report` conflicts
+  with the mandated combined `report.json` (including case aliases on
+  insensitive volumes). Actual output file identities also detect collisions
+  between different source names on a less permissive output volume. Those cases are explicitly failed
+  in the combined report, whose three top-level keys are preserved. They
+  cannot receive both mandated documents on that filesystem/contract.
+* Existing optional report-row notes carry operational failures. Whether
+  organizers allow extra row keys remains Q2 in PROJECT-HANDOFF.txt; the
+  per-file six-key contract and all status/damage vocabularies are unchanged.
