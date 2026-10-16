@@ -420,3 +420,12 @@ derived from `samples/official/`. Dates are the working-session dates.
 * After the isolated stale-bytecode prerequisite fix, the ordinary Python 3.12
   command passes without a bytecode environment workaround: 451 tests run,
   one platform skip; organizer comparison remains 7/7.
+* Canonical release build/check passed on Python 3.12: extracted-source,
+  portable and installed recovery produce 31 identical JSON files with all
+  7 references. The canonical portable --verify mode also passes 7/7 using
+  an explicit external kit from an unrelated working directory.
+* Live CLI/standalone presentation now resolves artifact references against
+  the saved envelope directory, as historical presentation already did; added
+  a regression for usable absolute paths to actual/comparison artifacts.
+* Final live-path regression brings discovery to 452 tests (one platform skip),
+  all other tests pass without environment workarounds; references remain 7/7.

@@ -1,4 +1,6 @@
 """Known-answer reference matching, saved evidence and protected-path behavior."""
+import contextlib
+import io
 import hashlib
 import json
 from pathlib import Path
@@ -218,6 +220,16 @@ class ReferenceRunner(unittest.TestCase):
         actual = json.loads((self.output/case['actual']).read_text())
         self.assertTrue(any(record['id'] == 1040 for record in actual['records']))
         self.assertEqual(case['differences'], [])
+
+    def test_live_cli_prints_saved_artifact_paths_against_evidence_directory(self):
+        from deadbits.cli import main
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = main(['--verify', '--samples-dir', str(self.samples), '--expected-dir',
+                         str(self.expected), '--evidence-dir', str(self.output)])
+        self.assertEqual(code, 0, err.getvalue())
+        self.assertIn(str(self.output.resolve()/'actual/0001.json'), out.getvalue())
+        self.assertIn(str(self.output.resolve()/'comparison.json'), out.getvalue())
 
     def test_cli_dispatch_saves_envelope_and_installed_mode_explains_missing_kit(self):
         request = ValidationRequest(samples_dir=self.samples, expected_dir=self.expected, evidence_dir=self.output)

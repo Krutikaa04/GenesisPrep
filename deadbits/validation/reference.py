@@ -308,7 +308,8 @@ def main(argv=None):
         evidence = run_references(output_dir=args.evidence_dir,
             samples_dir=args.samples_dir or (args.kit_dir / 'samples' if args.kit_dir else None),
             expected_dir=args.expected_dir or (args.kit_dir / 'expected_outputs' if args.kit_dir else None))
-        presentation.emit(presentation.validation(evidence, args.verbose), sys.stdout)
+        presentation.emit(presentation.validation(evidence, args.verbose,
+                              args.evidence_dir.resolve() / 'reference-evidence.json'), sys.stdout)
         return {'complete': 0, 'failed': 1, 'unavailable': 3}[evidence.status]
     except (OSError, ValueError) as exc:
         presentation.emit('salvage: reference validation error: ' + str(exc), sys.stderr)
