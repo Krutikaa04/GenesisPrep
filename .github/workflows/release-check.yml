@@ -1,0 +1,78 @@
+name: Release validation
+on:
+  push:
+    branches: ['release/**']
+    tags: ['v*']
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - name: Build the committed artifacts twice
+        run: |
+          python tools/build_release.py --output dist
+          python tools/build_release.py --output dist-repeat
+          python -c "from pathlib import Path; a=Path('dist'); b=Path('dist-repeat'); assert sorted(p.name for p in a.iterdir()) == sorted(p.name for p in b.iterdir()); assert all(p.read_bytes() == (b/p.name).read_bytes() for p in a.iterdir()); print('Reproducible artifacts match')"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-assets
+          path: dist/*
+          if-no-files-found: error
+  platforms:
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {os: ubuntu-latest, python: '3.10', proof: linux-python310}
+          - {os: ubuntu-latest, python: '3.12', proof: linux-python312}
+          - {os: ubuntu-latest, python: '3.14', proof: linux-python314}
+          - {os: macos-latest, python: '3.12', proof: macos-python312}
+          - {os: windows-latest, python: '3.12', proof: windows-python312}
+    runs-on: ${{ matrix.os }}
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-assets
+          path: dist
+      - name: Unit tests
+        run: python -m unittest discover -s tests -p 'test_*.py'
+      - name: Organizer references
+        run: python tools/compare_expected.py
+      - name: Verify downloaded portable and installed packages
+        run: python tools/check_release.py --dist dist --output validation-${{ matrix.proof }}.json
+      - name: Measure damage recovery
+        run: python tools/evaluate.py --json evaluation-${{ matrix.proof }}.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: proof-${{ matrix.proof }}
+          path: |
+            validation-${{ matrix.proof }}.json
+            evaluation-${{ matrix.proof }}.json
+          if-no-files-found: error
+  docker:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - name: Preload pinned Docker base
+        run: docker pull python:3.12-slim@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1
+      - name: Compare source with offline container
+        run: SALVAGE_PYTHON=python tools/docker_check.sh
