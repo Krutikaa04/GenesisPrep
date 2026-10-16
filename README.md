@@ -50,6 +50,21 @@ Formats: LIBRA-98, LABLOG, VAULT, WKS, EBCDIC-DUMP, CVT (SEQ/VLIR), PAK, WAD,
 the kit's WordPerfect document profile, and BRAVO. Unknown structures remain
 `UNKNOWN` / `unrecognized`; encrypted WPD documents are `unsupported`.
 
+## Terminal diagnostics and evidence
+
+`./salvage --doctor` checks the interpreter, application version, all ten adapters
+and local validation resources without installing or downloading anything.
+`./salvage input output --verbose` adds a per-file recovery table while keeping
+mandated JSON unchanged. Recovery counts do not imply accuracy.
+
+`--verify`, `--test` and `--benchmark` select validation services. Their live
+runners are being delivered separately in issues #10–#12; until available,
+these modes explicitly return unavailable (exit 3). They can already present
+saved schema-1 evidence using `--evidence-file`, always labelled historical.
+Validation exits are distinct from recovery's always-zero behavior. See
+[CLI modes and runner integration](docs/CLI-MODES.md) for paths, examples,
+exit codes and evidence protection.
+
 ## Docker build and isolated run
 
 Preload the pinned base image on a connected machine (or transfer its saved
