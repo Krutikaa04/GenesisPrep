@@ -368,3 +368,8 @@ derived from `samples/official/`. Dates are the working-session dates.
 * The source download is tested independently of a Git checkout: its full unit
   suite runs after extraction, using stored executable modes and temporary Git
   fixtures for packaging tests. Organizer fixture hashes must remain unchanged.
+* Published v0.1.0-rc.1 from 169e091 after all seven release jobs passed:
+  Linux Python 3.10/3.12/3.14, macOS/Windows Python 3.12, reproducible build and
+  offline Docker parity. Both checkout and standalone source run 370 tests;
+  platform package checks match 31 JSON outputs and all seven references.
+  Final 0.1.0 changes the embedded version and receives its own identical gate.
