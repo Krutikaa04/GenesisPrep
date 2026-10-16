@@ -328,3 +328,25 @@ derived from `samples/official/`. Dates are the working-session dates.
   shift paragraph numbers. Truncated files (no marker/trailer) are now recognised at confidence 0.55 from CR-only
   ASCII text (>= 3 paragraphs, >= 32 bytes, no LF, < 64 KiB): s16 cut at 50%/90% and s17 at 90% decode; the 10% cuts
   (no CR yet) and s17's 50% cut (only 2 CRs) stay UNKNOWN. Trade-off: other CR-only text would be misidentified.
+
+## 2026-10-16 — M3 issue #8 development baseline
+
+* Started issue-8-release-baseline from origin/master 31b40d8. Ported release
+  tooling from immutable v0.1.0 rather than resetting the diverged release/0.1
+  branch. Newer BRAVO recovery, M1/M2 improvements and symlink capability tests
+  are preserved; no format decoder or official fixture is changed by this work.
+* Restored portable/source/installer builds, package verification, installation
+  guidance, module entry point and help/version flags. One VERSION literal now
+  identifies the unpublished source as 0.2.0-dev across CLI, reports and builds.
+* Operational report notes go to stderr so report rows contain only the required
+  keys. Existing filesystem failure tests assert diagnostics rather than extra
+  JSON keys; no failure-handling coverage was removed.
+* Test discovery supplies the current count. The 370-test figure describes the
+  published v0.1.0 snapshot, not this checkout. Release validation also runs on
+  PRs into master and builds artifacts without publishing anything.
+* Initial integrated validation on macOS/Python 3.12: 375 tests run, one
+  filesystem skip, all other tests pass; organizer references remain 7/7.
+  The newly discovered count includes the release tests and newer BRAVO tests.
+  Recomputed evaluation equals the current-master ledger exactly (180 variants,
+  173 changed), so restoring packaging has not changed decoder measurements.
+  Local offline Docker build/run also matches all 31 native JSON files exactly.

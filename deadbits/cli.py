@@ -7,8 +7,9 @@ from pathlib import Path
 
 from .engine import salvage_file
 from .model import Result, STATUSES
+from .version import VERSION
 
-TOOL_VERSION = "0.2.0"
+TOOL_VERSION = VERSION
 
 
 def _dump(obj) -> bytes:
@@ -86,7 +87,8 @@ def run(in_dir: Path, out_dir: Path) -> dict:
         row = {"file": p.name, "format": doc["format"], "status": doc["status"],
                "records": len(doc["records"]), "damage": len(doc["damage"])}
         if res.notes:
-            row["notes"] = res.notes
+            for note in res.notes:
+                print("salvage: %s: %s" % (ascii(p.name), note), file=sys.stderr)
         report["files"].append(row)
         report["totals"][doc["status"]] += 1
     _write_json(out_dir / "report.json", report)
@@ -95,6 +97,18 @@ def run(in_dir: Path, out_dir: Path) -> dict:
 
 def main(argv=None) -> int:
     argv = sys.argv[1:] if argv is None else argv
+    if argv == ["--version"]:
+        print("salvage %s" % TOOL_VERSION)
+        return 0
+    if argv in (["--help"], ["-h"]):
+        print("usage: salvage <input_dir> <output_dir>\n\n"
+              "Recover supported legacy records into UTF-8 JSON, entirely offline.\n"
+              "Input listing is nonrecursive. Use different input/output directories.\n"
+              "Each input produces <input name>.json, plus report.json.\n"
+              "Inspect statuses/damage and stderr: the recovery CLI always exits 0.\n\n"
+              "Options:\n  --help, -h   Show this help\n"
+              "  --version    Show the release version")
+        return 0
     if len(argv) != 2:
         print("usage: salvage <input_dir> <output_dir>", file=sys.stderr)
         return 0

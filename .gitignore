@@ -5,3 +5,6 @@ __pycache__/
 /out/
 /variants/
 /evaluation.json
+
+/dist*/
+/release-validation*/

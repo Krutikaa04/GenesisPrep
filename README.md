@@ -5,6 +5,27 @@ formats from bytes, runs independent adapters, and writes recovered records
 with explicit uncertainty and damage evidence. Runtime and tests use Python's
 standard library only; no network or AI/LLM calls.
 
+## Release installation
+
+The build tools package this same engine as a portable Python application
+and a per-user installer ZIP. Both require an existing Python 3.10+ interpreter;
+Python 3.12 is the primary tested version. There is no bundled third-party
+bootloader, GUI, automatic download, or administrator requirement.
+
+See [installation and removal](docs/INSTALL.md) for macOS, Linux and Windows.
+The installer adds an interpreter-bound command under the chosen prefix and
+prints PATH setup instructions without editing shell profiles or the registry.
+Use `salvage --help` and `salvage --version` after installation. Source/Docker
+remain the problem statement's primary submission routes.
+
+Version, manifest, artifact hashes and exact tested commit are linked by the
+release downloads. The preparation and validation process, support boundaries
+and submission instructions are in [release guidance](docs/RELEASE.md).
+
+The current source is an unpublished development baseline. Its version comes
+from `deadbits/version.py`; run `./salvage --version` to inspect it. Published
+`v0.1.0` remains a fixed snapshot and does not include later master changes.
+
 ## Run
 
 Use Python 3.10 or later (validated with 3.12):
@@ -20,7 +41,9 @@ salvage.bat <input_dir> <output_dir>
 Input listing is nonrecursive; directories are skipped. Output contains
 `<full input basename>.json` for each processable input plus `report.json`.
 The CLI exits 0 even for damaged inputs or operational errors; inspect each
-status, damage entry, the combined report and stderr. Use different input and
+status, damage entry, the combined report and stderr. Report rows contain only
+the required file/format/status/records/damage keys; operational explanations
+are sent to stderr. Use different input and
 output directories to protect source files.
 
 Formats: LIBRA-98, LABLOG, VAULT, WKS, EBCDIC-DUMP, CVT (SEQ/VLIR), PAK, WAD,
@@ -45,8 +68,7 @@ and dropped capabilities, and compares every output byte with a native run.
 It also checks the full output filename list. M3 validation produced **31
 byte-identical JSON files** for all 30 samples on native and isolated Docker
 runs, both locally and in [Linux CI](https://github.com/Krutikaa04/GenesisPrep/actions/runs/38855908310).
-No Docker dependency is needed
-for native operation.
+No Docker dependency is needed for native operation.
 
 ## Validate and measure
 
@@ -59,12 +81,18 @@ python3 tools/make_variants.py /tmp/deadbits-variants
 python3 tools/evaluate.py --variants /tmp/deadbits-variants --json /tmp/evaluation.json
 ```
 
-The current suite has **327 tests** (all pass in Linux CI; one filesystem
-fixture skips on this macOS host). It covers reference fixtures, every-offset
+The suite is discovered dynamically by `make test`; its final `Ran ... tests`
+line reports the count for the executing checkout. Published v0.1.0 had 370
+tests; later decoder and platform tests can change that count. Release CI tests
+Windows/macOS with Python 3.12 and Linux with Python 3.10/3.12/3.14, including
+pull requests into master. Platform-specific fixtures may skip where their
+filesystem feature is unavailable. The suite covers reference fixtures, every-offset
 truncation, byte flips,
 compound damage, direct decoder safety, resource limits, filesystem failures,
 adapter discovery and evaluator accounting. Organizer comparison must remain
-**7/7**. GitHub CI repeats tests, reference comparison, evaluation and native /
+**7/7**. The release checker independently compares source, portable and
+installed output on all 30 samples, verifies all ten adapters and tests offline
+installation/removal from outside the source folder. GitHub CI repeats tests, reference comparison, evaluation and native /
 offline-container parity for `m3`, `master`, and pull requests into `master`.
 
 The measured [M3 evaluation ledger](reports/m3-evaluation.json) contains all

@@ -1,5 +1,7 @@
 """CLI contract: naming, non-recursion, report.json, exit code, determinism, hostile directories."""
 import json
+import contextlib
+import io
 import os
 import shutil
 import subprocess
@@ -74,9 +76,13 @@ class Cli(unittest.TestCase):
     def test_report_json(self):
         r = json.loads((self.out / "report.json").read_text(encoding="utf-8"))
         self.assertIn("tool_version", r)
+        from deadbits.version import VERSION
+        self.assertEqual(r["tool_version"], VERSION)
         self.assertEqual([f["file"] for f in r["files"]], self.names)         # sorted, deterministic
         self.assertEqual(sum(r["totals"].values()), len(self.names))
+        self.assertEqual(set(r), {"tool_version", "files", "totals"})
         for f in r["files"]:
+            self.assertEqual(set(f), {"file", "format", "status", "records", "damage"})
             d = json.loads((self.out / (f["file"] + ".json")).read_text(encoding="utf-8"))
             self.assertEqual((f["format"], f["status"], f["records"], f["damage"]),
                              (d["format"], d["status"], len(d["records"]), len(d["damage"])))
@@ -184,10 +190,12 @@ class CliSafety(unittest.TestCase):
             except OSError as exc:
                 self.skipTest("filesystem does not support 255-byte basenames: %s" % exc)
             (inp / "z-good").write_bytes((SAMPLES / "s01.dat").read_bytes())
-            report = run(inp, out)
+            errors = io.StringIO()
+            with contextlib.redirect_stderr(errors):
+                report = run(inp, out)
             rows = {row["file"]: row for row in report["files"]}
             self.assertEqual(rows[long_name]["status"], "failed")
-            self.assertIn("could not write", rows[long_name]["notes"][0])
+            self.assertIn("could not write", errors.getvalue())
             self.assertEqual(rows["z-good"]["status"], "ok")
             self.assertTrue((out / "z-good.json").exists())
             self.assertEqual(set(report), {"tool_version", "files", "totals"})
@@ -244,9 +252,11 @@ class CliSafety(unittest.TestCase):
             inp, out = root / "in", root / "out"
             inp.mkdir()
             (inp / "report").write_bytes(b"unknown")
-            report = run(inp, out)
+            errors = io.StringIO()
+            with contextlib.redirect_stderr(errors):
+                report = run(inp, out)
             self.assertEqual(report["files"][0]["status"], "failed")
-            self.assertIn("collides", report["files"][0]["notes"][0])
+            self.assertIn("collides", errors.getvalue())
             self.assertEqual(json.loads((out / "report.json").read_bytes()), report)
 
     def test_case_variant_report_names_follow_actual_filesystem_identity(self):
@@ -262,10 +272,12 @@ class CliSafety(unittest.TestCase):
                 insensitive = (out / "caseprobe").exists()
                 probe.unlink()
                 (inp / name).write_bytes(b"unknown")
-                report = run(inp, out)
+                errors = io.StringIO()
+                with contextlib.redirect_stderr(errors):
+                    report = run(inp, out)
                 self.assertEqual(report["files"][0]["status"], "failed" if insensitive else "unrecognized")
                 if insensitive:
-                    self.assertIn("collides", report["files"][0]["notes"][0])
+                    self.assertIn("collides", errors.getvalue())
                 else:
                     self.assertEqual(json.loads((out / (name + ".json")).read_bytes())["source_file"], name)
                 self.assertEqual(json.loads((out / "report.json").read_bytes()), report)
@@ -285,11 +297,12 @@ class CliSafety(unittest.TestCase):
                 _write_json(path, obj)
                 if path.name == "a.json":
                     os.link(path, out / "b.json")
-            with patch("deadbits.cli._write_json", side_effect=write_with_alias):
+            errors = io.StringIO()
+            with patch("deadbits.cli._write_json", side_effect=write_with_alias), contextlib.redirect_stderr(errors):
                 report = run(inp, out)
             self.assertEqual([row["status"] for row in report["files"]],
                              ["unrecognized", "failed", "unrecognized"])
-            self.assertIn("collides", report["files"][1]["notes"][0])
+            self.assertIn("collides", errors.getvalue())
             self.assertEqual(json.loads((out / "a.json").read_bytes())["source_file"], "a")
             self.assertEqual(json.loads((out / "c.json").read_bytes())["source_file"], "c")
 
@@ -301,3 +314,42 @@ class CliSafety(unittest.TestCase):
                                      cwd=directory, capture_output=True, text=True, timeout=30)
             self.assertEqual(process.returncode, 0, process.stderr)
             self.assertTrue((output / "report.json").exists())
+
+
+class CliRelease(unittest.TestCase):
+    def test_version_and_help_are_available_without_outputs(self):
+        from deadbits.version import VERSION
+        for flag in ("--help", "-h", "--version"):
+            with self.subTest(flag=flag), tempfile.TemporaryDirectory() as directory:
+                process = subprocess.run([sys.executable, "-m", "deadbits.cli", flag],
+                                         cwd=directory, capture_output=True, text=True,
+                                         env=dict(os.environ, PYTHONPATH=str(ROOT)))
+                self.assertEqual(process.returncode, 0, process.stderr)
+                self.assertEqual(process.stderr, "")
+                self.assertIn("salvage " + VERSION if flag == "--version" else "usage: salvage", process.stdout)
+                self.assertEqual(list(Path(directory).iterdir()), [])
+
+    def test_package_entrypoint_matches_cli(self):
+        process = subprocess.run([sys.executable, "-m", "deadbits", "--version"],
+                                 cwd=ROOT, capture_output=True, text=True)
+        from deadbits.version import VERSION
+        self.assertEqual(process.returncode, 0)
+        self.assertEqual(process.stdout.strip(), "salvage " + VERSION)
+
+    def test_operational_notes_go_to_stderr_with_strict_report_rows(self):
+        from unittest.mock import patch
+        from deadbits.cli import run
+        from deadbits.model import Result
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            inp, out = root / "in", root / "out"
+            inp.mkdir()
+            (inp / "input").write_bytes(b"input")
+            result = Result("input", "UNKNOWN", "failed")
+            result.notes.append("permission failure")
+            errors = io.StringIO()
+            with patch("deadbits.cli.salvage_file", return_value=result), contextlib.redirect_stderr(errors):
+                report = run(inp, out)
+            self.assertEqual(set(report["files"][0]), {"file", "format", "status", "records", "damage"})
+            self.assertIn("permission failure", errors.getvalue())
+            self.assertEqual(json.loads((out / "report.json").read_bytes()), report)
