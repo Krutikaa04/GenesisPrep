@@ -44,6 +44,26 @@ never 0% or 100%. Presenters display these as unavailable, retaining the counts.
 | False verified | `false_verified_records` | `assessed_verified_records` | Wrong assessed outputs that claim verification |
 | Crashes | `crashes` | `cases` | Cases with escaping or engine-reported decoder exceptions |
 
+Reference sections optionally include a `RecordAccuracy` object in
+`record_accuracy`, plus `record_accuracy_detail` for unavailable measurements.
+These additive schema-1 fields are separate from file agreement. Older evidence
+without them loads with unknown record measurements; older application versions
+that reject unknown keys cannot present newly extended evidence.
+
+A present object contains measured integer counts `expected`, `recovered`,
+`correct`, `wrong`, `missing`, `unexpected`, and `optional`. Required invariants:
+correct + wrong = recovered; recovered + missing = expected. Its derived
+`measurements` are recovery (recovered/expected), accuracy (correct/expected),
+and precision (correct/(recovered+unexpected)). Zero denominators stay unknown.
+The loader checks nested counts and derived ratios rather than trusting saved
+percentages. Optional records are excluded from these denominators.
+
+Correct means expected format and all supplied record fields present and equal;
+unrequested fields are unassessed. Status/metadata/damage agreement remains a
+separate file-level measurement. These counts cover reference files only;
+duplicate/incomplete identities or repeated answers for one file leave aggregate
+record measurements unknown. See REFERENCE-RUNNER.md for the scoring boundary.
+
 Test outcomes are mutually exclusive top-level test outcomes: `passed`,
 `failed`, `errors`, `skipped`, `expected_failures`, `unexpected_successes`.
 The runner must collapse multiple subtest failures/errors into the parent test

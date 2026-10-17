@@ -10,7 +10,7 @@ import sys
 from ..engine import MAX_INPUT_BYTES, salvage_bytes
 from ..model import FORMAT_NAMES, KINDS, STATUSES
 from ..version import VERSION
-from .model import (Artifact, Context, Dataset, Environment, ReferenceEvidence,
+from .model import (Artifact, Context, Dataset, Environment, RecordAccuracy, ReferenceEvidence,
                     Resource, ValidationEvidence)
 
 MAX_REFERENCE_BYTES = 8 * 1024 * 1024
@@ -79,6 +79,38 @@ def differences(actual, exp):
 def compare(actual, exp):
     """Compatibility API used by tools/compare_expected.py and existing tests."""
     return [error['detail'] for error in differences(actual, exp)]
+
+
+def record_accuracy(actual, exp):
+    """Score supplied fields only; ambiguous identities cannot produce a rate.
+
+    File agreement retains legacy last-duplicate semantics. Record measurements
+    deliberately require unique, complete keys instead of hiding duplicates.
+    """
+    match_on = exp.get('match_on', ['id'])
+    def index(records):
+        result = {}
+        for record in records:
+            if any(field not in record for field in match_on):
+                raise ValueError('record accuracy requires all matching fields')
+            identity = key(record, match_on)
+            if identity in result:
+                raise ValueError('record accuracy unavailable for duplicate record identities')
+            result[identity] = record
+        return result
+    got, want = index(actual['records']), index(exp['records'])
+    optional = index(exp.get('optional_partial_records', []))
+    if want.keys() & optional.keys():
+        raise ValueError('required and optional record identities overlap')
+    recovered = len(got.keys() & want.keys())
+    correct = sum(actual['format'] == exp['format'] and
+                  all(field in got[identity] and got[identity][field] == value
+                      for field, value in record.items())
+                  for identity, record in want.items() if identity in got)
+    return RecordAccuracy(expected=len(want), recovered=recovered, correct=correct,
+                          wrong=recovered-correct, missing=len(want)-recovered,
+                          unexpected=len(got.keys()-want.keys()-optional.keys()),
+                          optional=len(got.keys() & optional.keys()))
 
 
 def _strict_json(payload):
@@ -184,6 +216,7 @@ def run_references(*, output_dir, samples_dir=None, expected_dir=None, source_di
     expected = Path(expected_dir).resolve() if expected_dir is not None else None
     output = _prepare_output(output_dir, [samples, expected, source_dir])
     artifacts, cases, problems, manifest = [], [], [], []
+    scores, scoring_problems, scored_files = [], [], set()
     def save(role, relative, payload):
         path = output / relative
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -255,12 +288,29 @@ def run_references(*, output_dir, samples_dir=None, expected_dir=None, source_di
                 except (TypeError, ValueError, KeyError) as exc:
                     comparisons_ready = False
                     case['problem'] = 'Comparison could not complete: %s: %s' % (type(exc).__name__, exc)
+                if case['matched'] is not None:
+                    try:
+                        if document['file'] in scored_files:
+                            raise ValueError('multiple reference answers for the same input file')
+                        score = record_accuracy(actual, document)
+                        scores.append(score)
+                        scored_files.add(document['file'])
+                        case['record_accuracy'] = score.to_dict()
+                    except (TypeError, ValueError, KeyError) as exc:
+                        case['record_accuracy_problem'] = str(exc)
+                        scoring_problems.append('%s: %s' % (reference_name, exc))
             if 'problem' in case:
                 problems.append('%s: %s' % (reference_name, case['problem']))
             cases.append(case)
     complete = complete and comparisons_ready
     matched = sum(case['matched'] for case in cases) if complete else None
     total = len(references) if references_ready else None
+    score = None
+    if complete and not scoring_problems:
+        score = RecordAccuracy(**{name: sum(getattr(item, name) for item in scores)
+                                  for name in RecordAccuracy.__dataclass_fields__})
+    score_detail = ('; '.join(scoring_problems) if scoring_problems else
+                    'Reference comparison did not complete.' if not complete else None)
     dataset_hash = None
     if complete:
         manifest.sort(key=lambda entry: entry['path'])
@@ -269,7 +319,9 @@ def run_references(*, output_dir, samples_dir=None, expected_dir=None, source_di
         save('dataset_manifest', 'dataset-manifest.json', _json_bytes(manifest))
     save('comparison', 'comparison.json', _json_bytes(dict(cases=cases, problems=problems)))
     save('summary', 'summary.json', _json_bytes(dict(matched=matched, total=total, compared=sum(case['matched'] is not None for case in cases),
-                                                  complete=complete, problems=problems)))
+                                                  complete=complete, problems=problems,
+                                                  record_accuracy=score.to_dict() if score is not None else None,
+                                                  record_accuracy_detail=score_detail)))
     context = Context(app_version=app_version, commit=commit,
         dataset=Dataset(identity='samples=%s; references=%s' % (samples, expected), sha256=dataset_hash),
         environment=Environment(platform.python_version(), platform.platform()), provenance='live',
@@ -280,7 +332,8 @@ def run_references(*, output_dir, samples_dir=None, expected_dir=None, source_di
                  Resource('organizer references', references_ready,
                           str(expected) if references_ready else '; '.join(problems)))
     evidence = ValidationEvidence(reference=ReferenceEvidence(context=context, resources=resources,
-                                  artifacts=tuple(artifacts), matched=matched, total=total))
+                                  artifacts=tuple(artifacts), matched=matched, total=total,
+                                  record_accuracy=score, record_accuracy_detail=score_detail))
     # Standalone evidence is also usable by --verify --evidence-file. The CLI owns
     # its separate validation.json envelope and will persist the returned object.
     with (output / 'reference-evidence.json').open('xb') as stream:

@@ -152,13 +152,48 @@ class _Section(_Model):
 
 
 @dataclass(frozen=True)
+class RecordAccuracy(_Model):
+    """Counts against supplied answers, excluding optional partial identities."""
+    expected: int = 0
+    recovered: int = 0
+    correct: int = 0
+    wrong: int = 0
+    missing: int = 0
+    unexpected: int = 0
+    optional: int = 0
+
+    def __post_init__(self):
+        for field in fields(self):
+            value = getattr(self, field.name)
+            _count(field.name, value)
+            if value is None:
+                raise ValueError('record counts must be measured integers')
+        if self.correct + self.wrong != self.recovered or self.recovered + self.missing != self.expected:
+            raise ValueError('record counts do not reconcile')
+
+    @property
+    def measurements(self):
+        return dict(recovery=Ratio(self.recovered, self.expected),
+                    accuracy=Ratio(self.correct, self.expected),
+                    precision=Ratio(self.correct, self.recovered + self.unexpected))
+
+    def to_dict(self):
+        return dict(super().to_dict(), measurements={k: v.to_dict() for k, v in self.measurements.items()})
+
+
+@dataclass(frozen=True)
 class ReferenceEvidence(_Section):
     matched: Optional[int] = None
     total: Optional[int] = None
+    record_accuracy: Optional[RecordAccuracy] = None
+    record_accuracy_detail: Optional[str] = None
 
     def __post_init__(self):
         super().__post_init__()
         Ratio(self.matched, self.total)
+        if self.record_accuracy is not None and not isinstance(self.record_accuracy, RecordAccuracy):
+            raise ValueError('record_accuracy must be RecordAccuracy or None')
+        _text('record_accuracy_detail', self.record_accuracy_detail)
 
     @property
     def agreement(self):
@@ -342,6 +377,8 @@ class ValidationEvidence(_Model):
             elif issubclass(kind, _Section):
                 nested = {"context": (Context, False), "resources": (Resource, True),
                           "artifacts": (Artifact, True)}
+                if kind is ReferenceEvidence:
+                    nested['record_accuracy'] = (RecordAccuracy, False)
             else:
                 nested = {}
             return restore(kind, data, nested)

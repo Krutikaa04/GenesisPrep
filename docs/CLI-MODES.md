@@ -30,6 +30,13 @@ salvage --benchmark --kit-dir "/path/to/organizer kit" --corpus-dir /tmp/variant
 salvage --verify --evidence-file /tmp/reference-proof/validation.json --verbose
 ```
 
+For new files with independent answers, use `--verify --samples-dir INPUTS
+--expected-dir ANSWERS --evidence-dir NEW_PROOF`. The reference summary computes
+record recovery, accuracy and precision with explicit denominators, plus wrong,
+missing, unexpected and optional counts. Only supplied files/fields are scored;
+see [reference measurement rules](REFERENCE-RUNNER.md). Ordinary recovery has no
+ground truth and continues to print accuracy unavailable.
+
 Doctor reports interpreter/version, all ten adapters, runner availability and
 local source/kit presence. It does not run tests, verify kit contents, install
 software or download anything. Source paths are auto-detected only for a source

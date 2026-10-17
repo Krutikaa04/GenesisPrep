@@ -569,3 +569,19 @@ derived from `samples/official/`. Dates are the working-session dates.
 * Common scan/work/output/item bounds and refusal behavior are documented in
   docs/ISSUE-17-LARGE-INPUTS.md. Trusted helper imports and failures are tested
   to default to refusal; no runtime dependency, network or input plugin added.
+
+## 2026-10-17 — M3 dynamic reference accuracy presentation
+
+* Extended the existing reference runner, rather than guessing accuracy from
+  successful decoding or verification flags. New input/answer snapshots produce
+  per-file and summed record recovery, supplied-field accuracy and precision;
+  missing, wrong, unexpected and optional records remain separate counts.
+* Record correctness requires all supplied fields to exist and agree and the
+  format to match. File agreement retains the organizer's original semantics.
+  Optional partial identities are excluded; unreferenced files are not scored.
+* Rejected duplicate-identity collapse as an accuracy policy: it can hide wrong
+  records. Ambiguous identities or multiple answers for one file retain legacy
+  file comparison but explicitly make aggregate record accuracy unavailable.
+* Unknown/empty denominators never become 100%. Historical evidence keeps its
+  recorded counts; older evidence with no record measurements says unavailable.
+  No decoder, recovery JSON, official fixture, dependency or issue-19 work changed.

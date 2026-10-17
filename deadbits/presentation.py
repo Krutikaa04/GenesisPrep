@@ -44,6 +44,23 @@ def validation(evidence, verbose=False, evidence_file=None):
         sections.append(('References', item))
         lines += ['References: ' + item.status, *table(('Measurement', 'Count'), [
             ('Reference agreement', ratio(item.agreement))]).split('\n')]
+        score = item.record_accuracy
+        if score is None:
+            lines.append('Record accuracy unavailable: ' + (item.record_accuracy_detail or
+                         'record measurements were not saved in this evidence.'))
+        else:
+            metrics = score.measurements
+            lines += table(('Record measurement', 'Count / denominator'), [
+                ('Recovered matching identities', ratio(metrics['recovery'])),
+                ('Record accuracy (supplied fields)', ratio(metrics['accuracy'])),
+                ('Record precision (supplied fields)', ratio(metrics['precision'])),
+                ('Wrong matching records', score.wrong), ('Missing expected records', score.missing),
+                ('Unexpected records', score.unexpected),
+                ('Optional records (not scored)', score.optional)]).split('\n')
+            if not score.expected:
+                lines.append('Record accuracy unavailable: references contain no required records.')
+            lines.append('Scope: supplied reference files and fields only; files without answers are not scored.')
+            lines.append('Optional partial records are excluded; format must match for a record to count as correct.')
     if evidence.tests is not None:
         item = evidence.tests
         sections.append(('Tests', item))
