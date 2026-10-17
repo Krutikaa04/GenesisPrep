@@ -95,12 +95,13 @@ class TerminalUI(unittest.TestCase):
             skipped=0, expected_failures=0, unexpected_successes=0,
             artifacts=(Artifact('test_log', 'tests.log'),)), benchmarks=(
                 BenchmarkEvidence(baseline='regression_baseline', format='WKS', cases=2, crashes=1),))
-        text = ui.validation(evidence, evidence_file=Path('/tmp/proof/validation.json'), compact=True)
+        evidence_path = Path('/tmp/proof/validation.json')
+        text = ui.validation(evidence, evidence_file=evidence_path, compact=True)
         self.assertIn('Tests: failed', text)
         self.assertIn('regression_baseline', text)
         self.assertIn('not independent accuracy', text)
         self.assertIn('/ failed / unknown', text)
-        self.assertIn('Full evidence: /tmp/proof/validation.json', text)
+        self.assertIn('Full evidence: ' + str(evidence_path), text)
         self.assertNotIn('test_log:', text)
 
     def test_ui_does_not_change_recovery_json_bytes(self):
