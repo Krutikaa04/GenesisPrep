@@ -17,9 +17,16 @@ The new modes use these exit codes, established before implementation:
 
 `--help` and `--version` exit 0. Legacy recovery usage errors retain exit 0;
 usage errors requesting `--doctor`, `--verify`, `--test` or `--benchmark` exit 2.
-Only one mode can be selected. Output uses plain text, no ANSI or interactive
-prompts, including when redirected. Unsupported terminal filename glyphs are
-escaped, and controls in data are escaped.
+Only one mode can be selected. ASCII panels, file-count bars and measured-ratio
+bars organize recovery and validation. Narrow terminals switch wide tables to
+labelled rows and wrap panel content. Bars are scaled visual summaries; exact
+counts and denominators remain visible. Unknown ratios show question marks,
+never a full bar. Tests retain outcome counts rather than an accuracy percentage.
+
+Capable interactive terminals use cyan borders. `NO_COLOR=1`, `TERM=dumb`,
+redirected output and older Windows consoles use plain text without ANSI.
+Ordinary CLI modes have no prompts; only `--demo --guided` can pause between
+steps. Unsupported terminal filename glyphs and data controls are escaped.
 
 ```sh
 salvage --doctor

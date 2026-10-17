@@ -23,6 +23,19 @@ automatically skip prompts; EOF switches to automatic continuation. The transcri
 uses plain text and escapes terminal controls in fields/paths. Unsupported terminal
 glyphs follow the existing presentation fallback.
 
+The terminal walkthrough now uses a step map, readable record/uncertainty cards,
+scaled byte diagrams with exact truncation counts and checksum offsets, damage
+cards and a final state board. These views use actual saved engine output and
+recorded mutations. Byte diagrams describe the deliberate input changes, not
+estimated recovery accuracy. Validation uses compact benchmark tables with
+separate baseline labels and a link to the full evidence instead of flooding the
+screen with hashes. Historical proof remains labelled with its recorded version
+and time; live validation shows RUNNING until actual results are available.
+No animation, simulated progress percentage or timing guarantee is used.
+
+Borders are accented only on capable interactive terminals. Set `NO_COLOR=1`
+for plain output. Saved transcripts and redirected logs always remain plain text.
+
 ## Walkthrough
 
 1. **Normal recovery:** choose the first sorted, healthy version-2 LIBRA-98 sample

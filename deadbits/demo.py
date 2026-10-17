@@ -140,7 +140,14 @@ def run_demo(*, kit_dir, output_dir, source_dir=None, historical=None,
                     environment=dict(python_version=platform.python_version(), platform=platform.platform()),
                     kit_dir=str(kit), source_dir=str(source) if source else None,
                     recovery=[], validation=[])
+    say(presentation.banner('GUIDED DEMO  /  LIVE'))
     say("Mentor demo: current recovery run (live)\nKit: " + presentation.clean(kit))
+    say(presentation.panel('THE WALKTHROUGH',
+        '1  Healthy input    -> readable records\n'
+        '2  Truncated copy   -> missing bytes and partial fields\n'
+        '3  Checksum damage  -> readable but unverified records\n'
+        '4  Unknown input    -> no invented records\n'
+        '5  Validation       -> answers, tests and measured benchmarks'))
     if guided and not interactive:
         say("Guided prompts skipped: redirected/noninteractive streams; continuing automatically.")
     say("Recovery counts, reference agreement, test outcomes and record accuracy are separate measurements.")
@@ -157,7 +164,8 @@ def run_demo(*, kit_dir, output_dir, source_dir=None, historical=None,
     if errors.getvalue():
         say("Recovery diagnostics:\n" + "\n".join(presentation.clean(line) for line in errors.getvalue().splitlines()))
     for number, name in enumerate(_CASES, 1):
-        say("\n%d. %s recovery (live)" % (number, name.capitalize()))
+        say('\n' + presentation.panel('%d. %s recovery (live)' % (number, name.capitalize()),
+            'Observe the input change, recovered fields and damage evidence.'))
         if name not in plans:
             detail = ("Unavailable: the kit needs a healthy version-2 LIBRA-98 sample with records, "
                       "confirmed framing and size <= 2 MiB. No replacement fields were invented.")
@@ -169,28 +177,34 @@ def run_demo(*, kit_dir, output_dir, source_dir=None, historical=None,
         try:
             doc = json.loads(path.read_text(encoding="utf-8"))
             status = "complete" if _observed(name, doc) else "failed"
+            say(presentation.byte_change(name, plan['mutation'],
+                len(selected[1]) if selected is not None else 0, len(plan['data'])))
             manifest["recovery"].append(dict(step=name, status=status, provenance="live",
                 input=str(inputs / (name + ".dat")), output=str(path), source=plan["source"],
                 source_sha256=plan["source_sha256"], input_sha256=hashlib.sha256(plan["data"]).hexdigest(),
                 mutation=plan["mutation"], format=doc["format"], file_status=doc["status"],
                 records=len(doc["records"]), unverified_records=sum(_unverified(r) for r in doc["records"])))
             say("%s / %s; %d recovered records" % (doc["format"], doc["status"], len(doc["records"])))
+            uncertain_count = sum(_unverified(r) for r in doc['records'])
+            say(presentation.panel('RECOVERY RESULT',
+                '%d records recovered | %d explicitly unverified | %d damage entries\n%s' %
+                (len(doc['records']), uncertain_count, len(doc['damage']),
+                 presentation._STATUS.get(doc['status'], doc['status']))))
             preview = doc["records"][:2]
             uncertain = next((r for r in doc["records"] if _unverified(r)), None)
             if uncertain is not None and uncertain not in preview:
                 preview.append(uncertain)
             for record in preview:
-                say(("Unverified record: " if _unverified(record) else "Recovered fields: ") +
-                    json.dumps(record, sort_keys=True, ensure_ascii=True))
+                say(presentation.record_card(record))
             if len(doc["records"]) > len(preview):
                 say("Additional records are in the saved JSON.")
             for damage in doc["damage"][:5]:
-                say("Damage at byte %s: %s" % (damage["offset"], json.dumps(damage, sort_keys=True)))
+                say(presentation.panel('Damage at byte %s: %s' % (damage['offset'], damage['kind']),
+                    '%s\nLoss reported: %s' % (presentation.clean(damage['detail']), damage['lossy'])))
             if len(doc["damage"]) > 5:
                 say("Additional damage entries are in the saved JSON.")
             if status == "failed":
                 say("Demonstration failed: this output did not exhibit the requested case.")
-            say("Mutation: " + json.dumps(plan["mutation"], sort_keys=True))
             say("Input: " + presentation.clean(inputs / (name + ".dat")))
             say("Saved JSON: " + presentation.clean(path))
         except (OSError, ValueError, KeyError, TypeError) as error:
@@ -210,6 +224,8 @@ def run_demo(*, kit_dir, output_dir, source_dir=None, historical=None,
         path = historical.get(mode)
         provenance = "historical" if path is not None else "live"
         say("\n%s validation (%s)" % (mode.capitalize(), provenance))
+        say('[RUNNING] Loading saved proof...' if path is not None else
+            '[RUNNING] Measuring %s with local resources; results follow when complete.' % mode)
         try:
             if path is not None:
                 evidence = diagnostics.load_evidence(path, mode)
@@ -231,7 +247,7 @@ def run_demo(*, kit_dir, output_dir, source_dir=None, historical=None,
                     _json(path, evidence.to_dict())
             manifest["validation"].append(dict(step=mode, status=evidence.status, provenance=provenance,
                                                evidence_path=str(path), evidence=evidence.to_dict()))
-            say(presentation.validation(evidence, verbose=True, evidence_file=path))
+            say(presentation.validation(evidence, evidence_file=path, compact=True))
             say("Evidence file: " + presentation.clean(path))
         except Exception as error:
             status = "unavailable" if isinstance(error, OSError) else "failed"
@@ -242,7 +258,11 @@ def run_demo(*, kit_dir, output_dir, source_dir=None, historical=None,
         pause()
     states = [step["status"] for step in manifest["recovery"] + manifest["validation"]]
     manifest["status"] = "failed" if "failed" in states else "unavailable" if any(s != "complete" for s in states) else "complete"
-    say("\nDemo: " + manifest["status"])
+    say('\n' + presentation.panel('Demo: ' + manifest['status'],
+        presentation.table(('Demonstration', 'State', 'Source'),
+            [(step['step'], step['status'], step.get('provenance') or 'not run')
+             for step in manifest['recovery'] + manifest['validation']]) +
+        '\nCompletion means requested steps ran successfully, not perfect recovery.'))
     say("Walkthrough manifest: " + presentation.clean(output / "demo.json"))
     say("Saved transcript: " + presentation.clean(output / "transcript.txt"))
     _json(output / "demo.json", manifest)
