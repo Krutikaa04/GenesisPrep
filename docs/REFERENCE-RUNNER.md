@@ -89,6 +89,70 @@ snapshots at most 32 MiB; each sample bounded by the engine's 128 MiB read limit
 total unique sample snapshots at most 128 MiB. Limit refusals are unavailable
 with explicit problems, not truncated comparisons presented as passes.
 
+## Dynamic record measurements for new inputs
+
+Use the same runner with new local files and their independently supplied answers:
+
+```sh
+salvage --verify --samples-dir /path/to/judge-inputs --expected-dir /path/to/answers --evidence-dir /tmp/new-judge-proof
+```
+
+Each answer is a JSON object naming one input basename, for example:
+
+```json
+{
+  "file": "judge-sheet.bin",
+  "format": "WKS",
+  "status": "ok",
+  "match_on": ["cell"],
+  "records": [
+    {"cell": "A1", "row": 0, "col": 0, "type": "integer", "value": 7}
+  ]
+}
+```
+
+Supply all fields you intend to assess. Do not manufacture expected answers from
+the same recovery output and call the result independent accuracy. References
+are data and never executable code. Other supported formats use their own
+identity fields, e.g. id, sample, slot, student_id or name, explicitly in match_on.
+
+Live CLI output includes these aggregate counts, calculated from the exact saved
+actuals and answers, with per-file counts in comparison.json and totals in
+summary.json and the evidence envelopes:
+
+| Measurement | Numerator / denominator |
+| --- | --- |
+| Recovered matching identities | Required expected identities present / required expected records |
+| Record accuracy (supplied fields) | Correct required records / required expected records |
+| Record precision (supplied fields) | Correct required records / (matched required records + unexpected records) |
+
+A correct record must have the expected format and every supplied expected
+record field explicitly present and equal. Wrong matching records are recovered
+required identities with any missing/unequal supplied field or the wrong format.
+Missing expected identities and unexpected output identities are separate counts.
+Unrequested fields do not affect record accuracy. Status, metadata and damage
+remain part of file-level agreement, not the record accuracy numerator.
+Verification markers remain separate unless explicitly supplied as expected fields.
+
+Optional partial identities are counted separately and excluded from all record
+rate denominators. Expected records must describe the exhaustive required set;
+other identities need explicit optional entries to avoid being unexpected.
+Only files with answers are measured. Unreferenced input files are not decoded
+by this runner and never silently included in the accuracy claim. Aggregate
+rates use summed counts, not an average of per-file percentages.
+
+Zero denominators are unavailable, never a fabricated 100%. Missing/malformed
+resources or incomplete comparisons leave aggregate record measurements unknown.
+Duplicate record identities, missing identity fields, overlapping required/optional
+identities or multiple answers for one file make aggregate record metrics
+unavailable with a reason. File agreement retains its existing matching rules.
+
+Saved metrics are presented as historical. Older schema-1 evidence without record
+counts remains readable and explicitly says those measurements were not saved;
+its file agreement cannot be reused as record accuracy. No new accuracy is
+inferred from historical artifacts. Recovery without supplied answers retains
+its explicit accuracy-unavailable message and unchanged output JSON contract.
+
 ## Matching compatibility
 
 `tools/compare_expected.py` imports the runner's `compare`/`key` compatibility

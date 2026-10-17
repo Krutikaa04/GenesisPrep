@@ -62,6 +62,19 @@ reference snapshots, detailed differences and a provenance envelope. Supply
 `--kit-dir` for external fixtures and a new `--evidence-dir` outside protected
 inputs; see [reference runner](docs/REFERENCE-RUNNER.md).
 
+For new judge files with supplied answers, run:
+
+```bash
+./salvage --verify --samples-dir /path/to/judge-inputs --expected-dir /path/to/answers --evidence-dir /tmp/new-judge-proof
+```
+
+The CLI calculates record recovery, accuracy (all supplied fields correct),
+precision, wrong/missing/unexpected records and optional unscored records for
+that run. It prints counts and denominators separately from file agreement.
+Answers use the reference JSON format described in the runner guide. Only
+referenced files/fields are scored; omitted fields and files are not independently
+assessed. Ordinary recovery without answers cannot report measured accuracy.
+
 `--test --source-dir "/path/to/source kit" --evidence-dir /tmp/test-proof`
 executes the selected trusted kit's `tests/` suite and saves dynamic outcomes
 and detailed logs. `--benchmark` measures mutations using explicit baseline

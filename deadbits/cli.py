@@ -110,7 +110,7 @@ def _parser():
     modes.add_argument("--demo", action="store_true",
                        help="run the mentor walkthrough; use --demo --help for options")
     for mode, help_text in (("doctor", "inspect interpreter, adapters and local resources"),
-                            ("verify", "compare organizer references"),
+                            ("verify", "compare supplied references and measure record accuracy"),
                             ("test", "execute an explicitly selected source test suite"),
                             ("benchmark", "measure recovery against labelled baselines")):
         modes.add_argument("--" + mode, action="store_true", help=help_text)
