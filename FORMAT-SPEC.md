@@ -474,10 +474,15 @@ and entropy in `metadata`. Recognised-but-unreadable (e.g. `LB98` + 3 bytes, s29
   may deliberately leave an oversized damaged file UNKNOWN when the prefix
   cannot independently identify it. Recognized budget refusals are failed
   with lossy `bad_length`; no missing bytes are invented as records.
-* M1/M2 adapters except VAULT retain a conservative 2MiB decode ceiling. Structural-item
-  projections additionally cap LABLOG at 200,000 bytes, WKS at 400,000 bytes,
+* M1/M2 adapters except VAULT default to a conservative 2MiB decode ceiling. Structural-item
+  projections default LABLOG to 200,000 bytes, WKS to 400,000 bytes,
   EBCDIC-DUMP at 500,000 bytes. These are safety policies (100,000 minimum-size
   items), not on-disk format limits. They can refuse a valid sparse file.
+  Optional, explicitly named local preflights may replace a coarse refusal
+  only after bounded per-format checks; absent/failed helpers retain refusal.
+  These paths cap scans at 8MiB, logical work/output at 32MiB/16MiB and
+  physical items at 100,000. See docs/ISSUE-17-LARGE-INPUTS.md and each
+  available format's large-input documentation for charges and remaining limits.
 * VAULT limits projected work/output to 16MiB each, replacing its 2MiB ceiling.
   It charges every physical declared index reference, including aliases, using
   exact allocation-free RLE scans of both candidate orders and invalid prefixes,

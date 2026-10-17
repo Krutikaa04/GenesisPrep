@@ -549,3 +549,23 @@ derived from `samples/official/`. Dates are the working-session dates.
 * Ordinary Python 3.12 discovery passes all 489 tests (one platform filesystem
   skip), with organizer comparison still 7/7. Literal --demo recovery paths,
   shared help/usage and legacy recovery output remain covered.
+
+## 2026-10-17 — M3 issue #17 selective large-input budgets
+
+* Preserved VAULT's merged work/output, alias and RLE amplification safeguards.
+  Remaining format helpers are isolated into per-format PRs. Shared enabling
+  code keeps original refusals on absent/broken helpers, uncertain framing or
+  exhausted budgets. No decoder semantics, output contract or official fixture
+  change; issue #19 remains outside scope.
+* Rejected a blanket increase of the legacy byte ceiling. New helpers must
+  count physical selected ranges/items and establish their own bounded path
+  before the ordinary decoder runs. Original small-input behavior remains.
+* Per-format fixtures, independent expected values, rejected declarations and
+  exact limits are documented in docs/*-LARGE-FILES.md and paired measured
+  ledgers reports/issue-17-*-profile.json. Baseline profiles explicitly replay
+  the original coarse refusal with optional helpers disabled and unchanged
+  decoders; paired input hashes must agree. Input allocation is excluded from
+  traced parsing+JSON measurements. These are not process-RSS/time promises.
+* Common scan/work/output/item bounds and refusal behavior are documented in
+  docs/ISSUE-17-LARGE-INPUTS.md. Trusted helper imports and failures are tested
+  to default to refusal; no runtime dependency, network or input plugin added.
