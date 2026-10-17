@@ -67,6 +67,32 @@ Formats: LIBRA-98, LABLOG, VAULT, WKS, EBCDIC-DUMP, CVT (SEQ/VLIR), PAK, WAD,
 the kit's WordPerfect document profile, and BRAVO. Unknown structures remain
 `UNKNOWN` / `unrecognized`; encrypted WPD documents are `unsupported`.
 
+## Web interface (optional, for people who prefer not to use a terminal)
+
+```bash
+python -m deadbits.webui          # opens http://127.0.0.1:8765/ ; Ctrl+C stops it
+python -m deadbits.webui --port 9000 --no-browser
+```
+
+Drop damaged files or a folder onto the page (or try the organizer's samples, optionally damaged on purpose), press
+**Recover**, then review each file's verdict, records, reported damage, bytes and JSON, export records as CSV, or save
+everything as a `.zip`. The page is only a front end for the command line's own code: files are copied into a private
+session folder, `deadbits.cli.run` writes the very same per-file JSON and `report.json`, and the page shows and
+downloads those files (a test asserts they are byte-identical to a CLI run). The batch report also shows the equivalent
+`./salvage <in> <out>` command for that session.
+
+Each file also has an **Accuracy** tab (and the batch report an accuracy card) that reports *measured* recovery, accuracy
+and precision, but only where a correct answer exists: the organizer's published answer key for kit files (matched by file
+content, never by name), or the undamaged copy for files the page damaged on purpose. It uses the same counting code as
+`salvage --verify`, shows which truth it used, never blends different answer keys, and says "no answer key" for any other
+file instead of inventing a percentage. It also calls out records that are wrong but were not flagged unverified, which
+no check can catch in formats without checksums (for example a flipped CVT character).
+
+It uses only the standard library, loads nothing from the network, and binds to `127.0.0.1` only (requests with another
+Host or Origin are refused). Session copies live under the system temp folder (not the project folder, which may be
+synced to a cloud drive) and are removed on **Start over**, on exit, or after a day. The default `./salvage <in> <out>`
+contract is unchanged.
+
 ## Terminal diagnostics and evidence
 
 `./salvage --doctor` checks the interpreter, application version, all ten adapters
