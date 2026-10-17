@@ -1,8 +1,9 @@
 # Beginner onboarding and release-readiness review
 
-This is an unpublished development candidate. Published v0.1.0 stays immutable;
-the version remains 0.2.0-dev. This work prepares use and validation, not release
-publication or a bundled-Python/native MSI/PKG distribution.
+This review covers the beginner workflow developed for the 0.2.0 release.
+Published v0.1.0 stays immutable. Release publication requires explicit approval;
+the distribution requires an existing Python and does not bundle an interpreter
+or provide native MSI/PKG packages.
 
 ## First-time journey
 
