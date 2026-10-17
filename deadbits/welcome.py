@@ -137,6 +137,9 @@ def run_menu(input_stream=None, output_stream=None, chooser=None, opener=None):
                     say('Recovery cancelled. No files were processed.')
                     continue
                 from .cli import run
+                # Reserve the fresh directory atomically: a folder created
+                # while the user was confirming must never be overwritten.
+                output.mkdir(parents=True, exist_ok=False)
                 report = run(inputs, output)
                 say(ui.recovery(report, verbose=True))
                 say('Results saved at: ' + ui.clean(output))
@@ -184,7 +187,7 @@ def run_menu(input_stream=None, output_stream=None, chooser=None, opener=None):
         except EOFError:
             say('\nInput ended. Saved results remain available.')
             return 0
-        except (OSError, ValueError) as exc:
+        except (OSError, ValueError, RuntimeError) as exc:
             say('Could not complete this task: ' + ui.clean(exc))
             say('Input files were preserved. Choose another folder or return to recovery.')
         except KeyboardInterrupt:

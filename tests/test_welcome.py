@@ -77,6 +77,22 @@ class WelcomeMenu(unittest.TestCase):
         self.assertIn('outside the input folder', text)
         self.assertFalse((self.inputs/'new').exists())
 
+    def test_results_created_during_confirmation_are_not_overwritten(self):
+        output = self.output
+        class ArrivingResults(io.StringIO):
+            def readline(self):
+                line = super().readline()
+                if line == 'y\n':
+                    output.mkdir()
+                    (output/'report.json').write_text('other run')
+                return line
+        stream = ArrivingResults('1\n%s\n%s\ny\n5\n' % (self.inputs, output))
+        console = io.StringIO()
+        self.assertEqual(welcome.run_menu(stream, console), 0)
+        self.assertIn('Could not complete this task', console.getvalue())
+        self.assertEqual((output/'report.json').read_text(), 'other run')
+        self.assertFalse((output/'sheet.bin.json').exists())
+
     def test_eof_at_menu_or_during_recovery_exits_without_hanging(self):
         for script in ('', '1\n', '1\n%s\n' % self.inputs, 'nonsense\n'):
             code, text = self.menu(script)
