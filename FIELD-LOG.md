@@ -585,3 +585,19 @@ derived from `samples/official/`. Dates are the working-session dates.
 * Unknown/empty denominators never become 100%. Historical evidence keeps its
   recorded counts; older evidence with no record measurements says unavailable.
   No decoder, recovery JSON, official fixture, dependency or issue-19 work changed.
+
+## 2026-10-17 — M3 terminal dashboard and visual demo
+
+* Added ASCII dashboard panels, batch-status bars with exact counts, measured
+  ratio bars with denominators and explicit unavailable states. File counts
+  are never labelled accuracy; test outcomes remain counts. Narrow tables
+  switch to labelled rows; panel text wraps without dropping stored data.
+* Guided demo uses actual saved records in field/uncertainty cards, scaled
+  truncation/checksum diagrams with exact byte counts/offsets, damage cards,
+  compact benchmark baseline tables and a final step-state board. Full evidence
+  stays linked. Historical measurements keep their own provenance/version/time.
+* Interactive borders can use colour; NO_COLOR, dumb terminals, redirection
+  and older Windows consoles remain plain. Data controls remain escaped.
+  Rejected fake progress/accuracy indicators: RUNNING is a state, not an ETA.
+* No decoder, recovery output contract, official sample or dependency changed.
+  This is presentation work; issue #19 finalization remains outside scope.

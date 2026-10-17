@@ -177,8 +177,11 @@ def main(argv=None) -> int:
             request = diagnostics.request_from(args)
             if mode == "doctor":
                 rows, code = diagnostics.doctor(request)
-                presentation.emit("Installation diagnostics (presence checks only)\n" +
-                                  presentation.table(("Check", "Available", "Detail"), rows), sys.stdout)
+                presentation.emit(presentation.banner('SYSTEM CHECK') + '\n' +
+                                  presentation.panel('Installation diagnostics (presence checks only)',
+                                  presentation.table(("Check", "Available", "Detail"),
+                                  [(name, 'READY' if available else 'MISSING', detail)
+                                   for name, available, detail in rows])), sys.stdout)
                 return code
             evidence_path = args.evidence_file.resolve() if args.evidence_file else None
             evidence = (diagnostics.load_evidence(evidence_path, mode) if evidence_path else
@@ -194,6 +197,9 @@ def main(argv=None) -> int:
     try:
         report = run(args.input_dir, args.output_dir)
         presentation.emit(presentation.recovery(report, args.verbose), sys.stdout)
+        presentation.emit(presentation.panel('SAVED RESULTS',
+            'Per-file JSON: ' + presentation.clean(args.output_dir.resolve()) + '\n' +
+            'Combined report: ' + presentation.clean(args.output_dir.resolve() / 'report.json')), sys.stdout)
     except Exception as exc:
         presentation.emit("salvage: error: %s" % exc, sys.stderr)
     return 0

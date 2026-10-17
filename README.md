@@ -57,6 +57,12 @@ and local validation resources without installing or downloading anything.
 `./salvage input output --verbose` adds a per-file recovery table while keeping
 mandated JSON unchanged. Recovery counts do not imply accuracy.
 
+Terminal dashboards show status distributions, plain-language damage explanations
+and measured accuracy bars with exact denominators. `--demo --guided` adds a
+step map, byte-change diagrams, record cards and a final walkthrough board.
+Capable terminals accent borders; `NO_COLOR=1` disables colour. Logs and saved
+transcripts stay plain text. Visuals never replace uncertainty or ground truth.
+
 `--verify` now runs organizer comparisons and saves actual decoded JSON,
 reference snapshots, detailed differences and a provenance envelope. Supply
 `--kit-dir` for external fixtures and a new `--evidence-dir` outside protected
