@@ -1,0 +1,205 @@
+{
+  "after": {
+    "method": "One traced parsing+JSON run per case; fixture/input allocation excluded; not process RSS or a timing guarantee.",
+    "platform": "macOS-27.0.1-arm64-arm-64bit",
+    "policy_sources_sha256": {
+      "_large.py": "60ba00f8389128f3f3c9dd6a6fd1b4035d20d3e2e0a5643f6dbb855f42119081",
+      "_large_wks.py": "42c22d52dc9c4b3740d9a76860da42af06d16fc8694a2526cd5eff16a084fdc0",
+      "_limits.py": "8f45625c5e47982e014b5fdfc34db2f0b908453010415f0a26114cfa15c3face"
+    },
+    "python": "3.12.15",
+    "rows": [
+      {
+        "case": "valid-labels",
+        "damage": [],
+        "elapsed_ms": 6.476,
+        "format": "WKS",
+        "input_bytes": 2160406,
+        "input_sha256": "515f4a1229c48aa0d310ee61224a1040fdee7a9bfb755f575851f02cf7a48e34",
+        "json_bytes": 2163316,
+        "peak_traced_bytes": 6505375,
+        "records": 36,
+        "status": "ok"
+      },
+      {
+        "case": "valid-metadata",
+        "damage": [],
+        "elapsed_ms": 172.692,
+        "format": "WKS",
+        "input_bytes": 504021,
+        "input_sha256": "06f0983f5bc1399d06d98264bc59f47987b5a7fa181139abebbdec884f4bb569",
+        "json_bytes": 201,
+        "peak_traced_bytes": 2263,
+        "records": 1,
+        "status": "ok"
+      },
+      {
+        "case": "dense-unknown-opcodes",
+        "damage": [
+          {
+            "detail": "WKS projected output exceeds the 16777216-unit safety budget",
+            "kind": "bad_length",
+            "lossy": true,
+            "offset": 0
+          }
+        ],
+        "elapsed_ms": 132.906,
+        "format": "WKS",
+        "input_bytes": 440010,
+        "input_sha256": "ee0a79ba3894ad31485c91a6abf2992e3c94103258085f7117659b25b79836cd",
+        "json_bytes": 260,
+        "peak_traced_bytes": 2347,
+        "records": 0,
+        "status": "failed"
+      },
+      {
+        "case": "label-output-pressure",
+        "damage": [
+          {
+            "detail": "WKS projected output exceeds the 16777216-unit safety budget",
+            "kind": "bad_length",
+            "lossy": true,
+            "offset": 0
+          }
+        ],
+        "elapsed_ms": 1.332,
+        "format": "WKS",
+        "input_bytes": 4320802,
+        "input_sha256": "db043afdc8cbd8e72021b3b9534c33aa5b44913df67b11b3ba59a56ebeee74d9",
+        "json_bytes": 261,
+        "peak_traced_bytes": 246367,
+        "records": 0,
+        "status": "failed"
+      },
+      {
+        "case": "bad-label-boundary",
+        "damage": [
+          {
+            "detail": "WKS input exceeds the 2097152-byte legacy decoder safety limit",
+            "kind": "bad_length",
+            "lossy": true,
+            "offset": 0
+          }
+        ],
+        "elapsed_ms": 0.179,
+        "format": "WKS",
+        "input_bytes": 2160406,
+        "input_sha256": "af81b41ec6491ec3581daaf4fd384b7addd41d3ee2878f3e5d04720173b86050",
+        "json_bytes": 260,
+        "peak_traced_bytes": 185999,
+        "records": 0,
+        "status": "failed"
+      }
+    ],
+    "schema_version": 1
+  },
+  "baseline_policy": "435c07e coarse refusal replay; helpers disabled; unchanged WKS decoder",
+  "before": {
+    "method": "One traced parsing+JSON run per case; fixture/input allocation excluded; not process RSS or a timing guarantee.",
+    "platform": "macOS-27.0.1-arm64-arm-64bit",
+    "policy": "Original coarse refusal replay; helpers disabled, decoders unchanged.",
+    "policy_sources_sha256": {
+      "_large.py": "60ba00f8389128f3f3c9dd6a6fd1b4035d20d3e2e0a5643f6dbb855f42119081",
+      "_limits.py": "8f45625c5e47982e014b5fdfc34db2f0b908453010415f0a26114cfa15c3face"
+    },
+    "python": "3.12.15",
+    "rows": [
+      {
+        "case": "valid-labels",
+        "damage": [
+          {
+            "detail": "WKS input exceeds the 2097152-byte legacy decoder safety limit",
+            "kind": "bad_length",
+            "lossy": true,
+            "offset": 0
+          }
+        ],
+        "elapsed_ms": 0.274,
+        "format": "WKS",
+        "input_bytes": 2160406,
+        "input_sha256": "515f4a1229c48aa0d310ee61224a1040fdee7a9bfb755f575851f02cf7a48e34",
+        "json_bytes": 254,
+        "peak_traced_bytes": 67307,
+        "records": 0,
+        "status": "failed"
+      },
+      {
+        "case": "valid-metadata",
+        "damage": [
+          {
+            "detail": "WKS conservative structural-item projection exceeds the 100000-item safety budget",
+            "kind": "bad_length",
+            "lossy": true,
+            "offset": 0
+          }
+        ],
+        "elapsed_ms": 0.175,
+        "format": "WKS",
+        "input_bytes": 504021,
+        "input_sha256": "06f0983f5bc1399d06d98264bc59f47987b5a7fa181139abebbdec884f4bb569",
+        "json_bytes": 274,
+        "peak_traced_bytes": 3187,
+        "records": 0,
+        "status": "failed"
+      },
+      {
+        "case": "dense-unknown-opcodes",
+        "damage": [
+          {
+            "detail": "WKS conservative structural-item projection exceeds the 100000-item safety budget",
+            "kind": "bad_length",
+            "lossy": true,
+            "offset": 0
+          }
+        ],
+        "elapsed_ms": 0.197,
+        "format": "WKS",
+        "input_bytes": 440010,
+        "input_sha256": "ee0a79ba3894ad31485c91a6abf2992e3c94103258085f7117659b25b79836cd",
+        "json_bytes": 281,
+        "peak_traced_bytes": 3154,
+        "records": 0,
+        "status": "failed"
+      },
+      {
+        "case": "label-output-pressure",
+        "damage": [
+          {
+            "detail": "WKS input exceeds the 2097152-byte legacy decoder safety limit",
+            "kind": "bad_length",
+            "lossy": true,
+            "offset": 0
+          }
+        ],
+        "elapsed_ms": 0.189,
+        "format": "WKS",
+        "input_bytes": 4320802,
+        "input_sha256": "db043afdc8cbd8e72021b3b9534c33aa5b44913df67b11b3ba59a56ebeee74d9",
+        "json_bytes": 263,
+        "peak_traced_bytes": 67112,
+        "records": 0,
+        "status": "failed"
+      },
+      {
+        "case": "bad-label-boundary",
+        "damage": [
+          {
+            "detail": "WKS input exceeds the 2097152-byte legacy decoder safety limit",
+            "kind": "bad_length",
+            "lossy": true,
+            "offset": 0
+          }
+        ],
+        "elapsed_ms": 0.191,
+        "format": "WKS",
+        "input_bytes": 2160406,
+        "input_sha256": "af81b41ec6491ec3581daaf4fd384b7addd41d3ee2878f3e5d04720173b86050",
+        "json_bytes": 260,
+        "peak_traced_bytes": 67296,
+        "records": 0,
+        "status": "failed"
+      }
+    ],
+    "schema_version": 1
+  }
+}
