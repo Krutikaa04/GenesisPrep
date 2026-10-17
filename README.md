@@ -202,8 +202,11 @@ experiments in [FIELD-LOG.md](FIELD-LOG.md).
   plausible in-bounds changes can remain undetected. `verified` there means
   structural consistency. A computed SHA-256 describes selected bytes.
 - The file reader caps input at 128MiB and rejects symlinks/special files.
-  LIBRA/LABLOG/WKS/CVT/EBCDIC retain a conservative 2MiB ceiling; structural
-  projections further cap LABLOG/WKS/EBCDIC at 200,000/400,000/500,000 bytes.
+  LIBRA/LABLOG/WKS/CVT/EBCDIC default to a conservative 2MiB ceiling; structural
+  projections default LABLOG/WKS/EBCDIC to 200,000/400,000/500,000 bytes.
+  Available [selective large-input helpers](docs/ISSUE-17-LARGE-INPUTS.md) can
+  replace those refusals only after bounded per-format checks (8MiB scan,
+  32MiB logical work, 16MiB logical output, 100,000 physical items).
   VAULT uses measured RLE expansion and per-reference work/output budgets of
   16MiB each instead of the 2MiB ceiling; see [VAULT large-file limits](docs/VAULT-LARGE-FILES.md).
   These policies can refuse a legitimate file;
