@@ -1,0 +1,130 @@
+{
+  "after": {
+    "method": "One traced parsing+JSON run per case; fixture/input allocation excluded; not process RSS or a timing guarantee.",
+    "platform": "macOS-27.0.1-arm64-arm-64bit",
+    "policy_sources_sha256": {
+      "_large.py": "60ba00f8389128f3f3c9dd6a6fd1b4035d20d3e2e0a5643f6dbb855f42119081",
+      "_large_cvt.py": "e624d3e08188d627e602b5b046346760156d301dafb3f56334d2ef442b34a745",
+      "_limits.py": "8f45625c5e47982e014b5fdfc34db2f0b908453010415f0a26114cfa15c3face"
+    },
+    "python": "3.12.15",
+    "rows": [
+      {
+        "case": "valid-seq",
+        "damage": [],
+        "elapsed_ms": 164.191,
+        "format": "CVT",
+        "input_bytes": 2286508,
+        "input_sha256": "7d3daf67cb662ccca484546d34e5f01b2f565e5db3c096690e6324c640d9b187",
+        "json_bytes": 2286288,
+        "peak_traced_bytes": 23911992,
+        "records": 1,
+        "status": "ok"
+      },
+      {
+        "case": "valid-vlir",
+        "damage": [],
+        "elapsed_ms": 181.489,
+        "format": "CVT",
+        "input_bytes": 2439162,
+        "input_sha256": "1f57f756de7c687c3915af2ec98d6d2aac32accd89f4ed0d92e6a06a98a775a2",
+        "json_bytes": 2439695,
+        "peak_traced_bytes": 7327671,
+        "records": 40,
+        "status": "ok"
+      },
+      {
+        "case": "hostile-seq-output",
+        "damage": [
+          {
+            "detail": "CVT projected output exceeds the 16777216-unit safety budget",
+            "kind": "bad_length",
+            "lossy": true,
+            "offset": 0
+          }
+        ],
+        "elapsed_ms": 0.392,
+        "format": "CVT",
+        "input_bytes": 4318508,
+        "input_sha256": "998c26fae9970212e52b9ed795f3f6e7d0f9264edbbcfd93312e1e1b9993ca8a",
+        "json_bytes": 258,
+        "peak_traced_bytes": 66398,
+        "records": 0,
+        "status": "failed"
+      }
+    ],
+    "schema_version": 1
+  },
+  "baseline_policy": "435c07e coarse refusal replay; optional helpers disabled; unchanged CVT decoder",
+  "before": {
+    "method": "One traced parsing+JSON run per case; fixture/input allocation excluded; not process RSS or a timing guarantee.",
+    "platform": "macOS-27.0.1-arm64-arm-64bit",
+    "policy": "Original coarse refusal replay; helpers disabled, decoders unchanged.",
+    "policy_sources_sha256": {
+      "_large.py": "60ba00f8389128f3f3c9dd6a6fd1b4035d20d3e2e0a5643f6dbb855f42119081",
+      "_large_cvt.py": "e624d3e08188d627e602b5b046346760156d301dafb3f56334d2ef442b34a745",
+      "_limits.py": "8f45625c5e47982e014b5fdfc34db2f0b908453010415f0a26114cfa15c3face"
+    },
+    "python": "3.12.15",
+    "rows": [
+      {
+        "case": "valid-seq",
+        "damage": [
+          {
+            "detail": "CVT input exceeds the 2097152-byte legacy decoder safety limit",
+            "kind": "bad_length",
+            "lossy": true,
+            "offset": 0
+          }
+        ],
+        "elapsed_ms": 0.198,
+        "format": "CVT",
+        "input_bytes": 2286508,
+        "input_sha256": "7d3daf67cb662ccca484546d34e5f01b2f565e5db3c096690e6324c640d9b187",
+        "json_bytes": 251,
+        "peak_traced_bytes": 67136,
+        "records": 0,
+        "status": "failed"
+      },
+      {
+        "case": "valid-vlir",
+        "damage": [
+          {
+            "detail": "CVT input exceeds the 2097152-byte legacy decoder safety limit",
+            "kind": "bad_length",
+            "lossy": true,
+            "offset": 0
+          }
+        ],
+        "elapsed_ms": 0.202,
+        "format": "CVT",
+        "input_bytes": 2439162,
+        "input_sha256": "1f57f756de7c687c3915af2ec98d6d2aac32accd89f4ed0d92e6a06a98a775a2",
+        "json_bytes": 252,
+        "peak_traced_bytes": 67192,
+        "records": 0,
+        "status": "failed"
+      },
+      {
+        "case": "hostile-seq-output",
+        "damage": [
+          {
+            "detail": "CVT input exceeds the 2097152-byte legacy decoder safety limit",
+            "kind": "bad_length",
+            "lossy": true,
+            "offset": 0
+          }
+        ],
+        "elapsed_ms": 0.2,
+        "format": "CVT",
+        "input_bytes": 4318508,
+        "input_sha256": "998c26fae9970212e52b9ed795f3f6e7d0f9264edbbcfd93312e1e1b9993ca8a",
+        "json_bytes": 260,
+        "peak_traced_bytes": 67120,
+        "records": 0,
+        "status": "failed"
+      }
+    ],
+    "schema_version": 1
+  }
+}
