@@ -1,5 +1,12 @@
 # Guided mentor demo
 
+For first-time users, open the installed Start Salvage launcher and choose
+**Run a guided demonstration**. Select the extracted matching source ZIP's
+top-level folder. The welcome menu locates its kit, suggests a fresh results
+folder and asks before running its local test/scoring code. A data-only kit
+still permits recovery/reference demonstrations; absent validation resources
+remain unavailable. The same CLI commands below remain available for presenters.
+
 The shared CLI delegates `--demo` to the same parser and orchestration as the
 standalone module. Both source and portable/installed applications support it;
 recovery and validation output formats remain unchanged.

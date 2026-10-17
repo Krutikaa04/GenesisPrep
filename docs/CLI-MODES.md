@@ -25,8 +25,15 @@ never a full bar. Tests retain outcome counts rather than an accuracy percentage
 
 Capable interactive terminals use cyan borders. `NO_COLOR=1`, `TERM=dumb`,
 redirected output and older Windows consoles use plain text without ANSI.
-Ordinary CLI modes have no prompts; only `--demo --guided` can pause between
-steps. Unsupported terminal filename glyphs and data controls are escaped.
+Ordinary CLI modes have no prompts; `--demo --guided` can pause between steps.
+The beginner welcome menu is the exception: no arguments in an interactive
+terminal (or explicit `--interactive`) opens a numbered menu with folder prompts.
+Redirected no-argument recovery usage keeps its historical zero exit; explicit
+`--interactive` accepts scripted input and exits cleanly on EOF. Menus preserve
+existing result folders, ask before opening a file manager, and report each
+validation task's own exit status. Unsupported terminal filename glyphs and data
+controls are escaped. The Windows source launcher now propagates the Python
+exit code, including validation failures; ordinary recovery still exits zero.
 
 ```sh
 salvage --doctor

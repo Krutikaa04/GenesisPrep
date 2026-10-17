@@ -601,3 +601,24 @@ derived from `samples/official/`. Dates are the working-session dates.
   Rejected fake progress/accuracy indicators: RUNNING is a state, not an ETA.
 * No decoder, recovery output contract, official sample or dependency changed.
   This is presentation work; issue #19 finalization remains outside scope.
+
+## 2026-10-17 — M3 beginner onboarding and release arrangements
+
+* User authorized the remaining onboarding/packaging arrangements. Added a
+  welcome menu for interactive no-argument launches and explicit --interactive,
+  optional native folder selection with a typed-path fallback, fresh results
+  suggestions, confirmation and explicit file-manager opening. Existing outputs
+  are preserved; recovery and validation reuse the shared engine/services.
+* Clickable setup/removal helpers check existing Python without downloading it.
+  Installation manages a Start Salvage entry, can offer the menu immediately,
+  upgrades legacy managed layouts and preserves unrelated files on removal.
+  No system Python, PATH/profile, registry or published release is changed.
+* Fixed Windows source-launcher validation exits; recovery retains zero exits.
+  The source archive is explicitly identified as the optional offline validation
+  kit. Menu demo execution asks before trusting external test/scoring code.
+* Canonical release checks now cover beginner recovery, dynamic references,
+  selected live tests, benchmarks, complete demos and unavailable resources from
+  source/portable/installed applications outside the checkout. The full extracted
+  source suite runs independently; demo validation uses a one-test kit to avoid
+  recursive discovery. Recovery/install socket audit remains separate from
+  explicitly trusted validation subprocess execution.

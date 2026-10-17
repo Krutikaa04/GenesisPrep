@@ -5,6 +5,23 @@ formats from bytes, runs independent adapters, and writes recovered records
 with explicit uncertainty and damage evidence. Runtime and tests use Python's
 standard library only; no network or AI/LLM calls.
 
+## First-time use
+
+After Python setup, extract the installer ZIP and open **Install on Windows.cmd**
+or **Install on macOS.command**. Choose Y to start the welcome menu. Later,
+open the installed **Start Salvage** launcher; PATH configuration is optional.
+Choose **Recover files**, browse for an input folder, accept a fresh results
+folder and confirm. Results can be opened in your file manager after recovery.
+The [installation guide](docs/INSTALL.md) explains prerequisites and removal.
+
+From a source checkout, run `./salvage` in an interactive terminal, or
+`python -m deadbits --interactive`. The menu offers recovery, a guided demo,
+expected-answer comparison and system checks. Native folder dialogs are optional;
+typed paths always work. The matching source ZIP is an explicitly located,
+optional offline demo/validation kit; recovery does not need it. Missing answers
+never become an invented accuracy percentage. No interpreter is bundled and no
+Python installation or shell configuration is changed automatically.
+
 ## Release installation
 
 The build tools package this same engine as a portable Python application

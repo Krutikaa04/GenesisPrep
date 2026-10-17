@@ -28,6 +28,8 @@ KINDS = {"truncated", "crc_mismatch", "checksum_mismatch", "bad_length",
          "index_missing", "header_checksum", "encrypted", "unknown_record"}
 ADAPTERS = {"libra98", "lablog", "vault", "wks", "wpd", "bravo", "cvt",
             "ebcdic_dump", "wad", "pak"}
+SETUP_HELPERS = {'Install on Windows.cmd', 'Uninstall on Windows.cmd',
+                 'Install on macOS.command', 'Uninstall on macOS.command'}
 NETWORK_MODULES = {"socket", "urllib", "http", "ftplib", "smtplib", "imaplib",
                    "poplib", "telnetlib", "xmlrpc", "webbrowser"}
 INSTALLER_SELF_CHECK = (
@@ -248,9 +250,47 @@ def command(argv, cwd, env=None, input_data=None):
     return result
 
 
-def source_command(root, args):
+def check_beginner_workflow(argv, cwd, work, samples, baseline):
+    output = work/'menu recovery'
+    script = '1\n%s\n%s\ny\nn\n5\n' % (samples, output)
+    run = command([*argv, '--interactive'], cwd, input_data=script.encode('utf-8'))
+    require(b'WHAT WOULD YOU LIKE TO DO' in run.stdout and b'Results saved at:' in run.stdout,
+            'beginner menu did not run recovery')
+    files = {path.name: path.read_bytes() for path in output.iterdir()}
+    require_equal_outputs(baseline, files)
+
+
+def check_validation_workflow(argv, cwd, work, kit, tiny_source):
+    """Exercise all live modes outside the checkout using a tiny trusted suite."""
+    output = work/'guided demo'
+    command([*argv, '--demo', '--kit-dir', kit, '--source-dir', tiny_source,
+             '--output-dir', output], cwd)
+    document = json_document((output/'demo.json').read_bytes())
+    require(document['status'] == 'complete', 'packaged guided demo did not complete')
+    evidence = {item['step']: item['evidence'] for item in document['validation']}
+    require(evidence['verify']['reference']['matched'] == 7,
+            'packaged reference validation did not measure seven references')
+    metrics = evidence['verify']['reference']['record_accuracy']
+    require(metrics['expected'] > 0 and metrics['correct'] == metrics['expected'],
+            'packaged reference record accuracy is missing or incorrect')
+    require(evidence['test']['tests']['passed'] == 1 and evidence['test']['tests']['total'] == 1,
+            'packaged live test service did not run the selected one-test kit')
+    require(evidence['benchmark']['benchmarks'] and
+            all(item['status'] == 'measured' for item in evidence['benchmark']['benchmarks']),
+            'packaged benchmark did not measure its cases')
+    # Missing kit must be unavailable with no invented passing measurements.
+    unavailable = work/'missing proof'
+    # Use menu, which reports the task's distinct exit and remains available.
+    requested = '3\n%s\n%s\n%s\nn\n5\n' % (kit/'samples', work/'empty answers', unavailable)
+    (work/'empty answers').mkdir(parents=True)
+    result = command([*argv, '--interactive'], cwd, input_data=requested.encode('utf-8'))
+    require(b'Comparison exit: 3' in result.stdout,
+            'missing validation resources became a successful measurement')
+
+
+def source_command(root, args, offline_guard=True):
     # -I excludes the current directory, user site and environment import paths.
-    code = OFFLINE_GUARD + ("import runpy,sys;sys.path.insert(0,sys.argv.pop(1));"
+    code = (OFFLINE_GUARD if offline_guard else '') + ("import runpy,sys;sys.path.insert(0,sys.argv.pop(1));"
             "runpy.run_module('deadbits.cli',run_name='__main__')")
     return [sys.executable, "-I", "-c", code, root, *args]
 
@@ -355,6 +395,9 @@ def verify(dist, root=ROOT):
     require(manifest.get("minimum_python") == "3.10"
             and manifest.get("installer_requires_python") is True,
             "release manifest has incorrect installation prerequisites")
+    require(manifest.get('validation_kit') == dict(artifact=names[2], root=prefix,
+                kit_dir='samples/official', source_dir='.'),
+            'manifest must locate the optional offline source/validation kit')
     require(set(manifest.get("artifacts", {})) == set(names), "manifest artifact file set differs")
     for name in names:
         require(manifest["artifacts"][name] == {"sha256": checksums[name],
@@ -364,9 +407,13 @@ def verify(dist, root=ROOT):
     runtime = zip_files(portable)
     require({"deadbits/formats/" + name + ".py" for name in ADAPTERS} <= set(runtime),
             "portable release omits a format adapter")
+    require({'deadbits/welcome.py', 'deadbits/demo.py', 'deadbits/presentation.py',
+             'deadbits/validation/reference.py', 'deadbits/validation/unittests.py',
+             'deadbits/validation/benchmark.py'} <= set(runtime),
+            'portable release omits beginner/demo/validation modules')
     runtime_imports = audit_python(runtime)
     installer_files = zip_files((dist / names[1]).read_bytes())
-    require(set(installer_files) == {"install.py", "salvage.pyz", "INSTALL.md", "SHA256SUMS"},
+    require(set(installer_files) == {"install.py", "salvage.pyz", "INSTALL.md", "SHA256SUMS", *SETUP_HELPERS},
             "installer ZIP contents differ from release layout")
     require(installer_files["salvage.pyz"] == portable, "installer embeds another portable build")
     installer_imports = audit_python({"install.py": installer_files["install.py"]})
@@ -410,7 +457,7 @@ def verify(dist, root=ROOT):
         bundle.mkdir()
         with safe_zip((dist / names[1]).read_bytes()) as archive:
             archive.extractall(bundle)
-        verify_checksums(bundle, ["salvage.pyz", "install.py", "INSTALL.md"])
+        verify_checksums(bundle, ["salvage.pyz", "install.py", "INSTALL.md", *SETUP_HELPERS])
         source = source_command(source_root, [])
         portable_cmd = [sys.executable, "-I", bundle / "salvage.pyz"]
         check_version_help(source, cwd, version)
@@ -428,6 +475,24 @@ def verify(dist, root=ROOT):
         baseline, source_docs, totals = validate_outputs(source_out, samples, version)
         output, _, _ = validate_outputs(portable_out, samples, version)
         require_equal_outputs(baseline, output)
+        # The complete extracted source suite was already tested above. A tiny
+        # explicit suite avoids recursively running it in every demo execution.
+        tiny_source = work/'trusted demo source ü'
+        (tiny_source/'tests').mkdir(parents=True)
+        (tiny_source/'tools').mkdir()
+        (tiny_source/'tests/test_smoke.py').write_text(
+            'import unittest\nfrom deadbits.engine import salvage_bytes\n'
+            'class Smoke(unittest.TestCase):\n'
+            ' def test_unknown(self):\n'
+            '  self.assertEqual(salvage_bytes(b"\\x00\\xff", "x").format, "UNKNOWN")\n', encoding='utf-8')
+        for name in ('evaluate.py', 'make_variants.py'):
+            (tiny_source/'tools'/name).write_bytes((source_root/'tools'/name).read_bytes())
+        for label, argv in (('source', source), ('portable', portable_cmd)):
+            destination = work/(label+' beginner proof')
+            check_beginner_workflow(argv, cwd, destination, kit/'samples', baseline)
+            validation_argv = source_command(source_root, [], offline_guard=False) if label == 'source' else argv
+            check_validation_workflow(validation_argv, cwd, destination, kit, tiny_source)
+        proof['checks'].append('source/portable beginner recovery parity and live reference/test/benchmark/demo outside checkout')
         proof["sample_files"], proof["json_files"], proof["totals"] = len(samples), len(output), totals
         proof["checks"].append("isolated portable CLI equals source for all 31 JSON files")
         # Load the existing organizer comparator only after isolated CLI executions.
@@ -452,6 +517,10 @@ def verify(dist, root=ROOT):
         command([*command_argv, kit / "samples", installed_out], cwd)
         output, _, _ = validate_outputs(installed_out, samples, version)
         require_equal_outputs(baseline, output)
+        destination = work/'installed beginner proof'
+        check_beginner_workflow(command_argv, cwd, destination, kit/'samples', baseline)
+        check_validation_workflow(command_argv, cwd, destination, kit, tiny_source)
+        proof['checks'].append('installed beginner menu, dynamic accuracy, live tests/benchmark/demo and missing-resource refusal')
         command([*install_cmd, "--prefix", custom, "--uninstall"], cwd)
         require(not installed.exists()
                 and not (custom / "share" / "salvage" / "salvage.pyz").exists(),
@@ -469,6 +538,22 @@ def verify(dist, root=ROOT):
         command([*install_cmd, "--uninstall"], cwd, env)
         require(not list(user.rglob("salvage.pyz")), "default uninstall left the application payload")
         proof["checks"].append("default user installation/removal confined to temporary user profile")
+        env['SALVAGE_NO_PAUSE'] = '1'
+        env['PATH'] = str(Path(sys.executable).parent) + os.pathsep + env.get('PATH', '')
+        if os.name == 'nt':
+            setup = [bundle/'Install on Windows.cmd']
+            removal = [bundle/'Uninstall on Windows.cmd']
+        else:
+            # ZipFile does not restore executable bits; the same shell body is
+            # used by macOS double-click launch and explicit POSIX invocation.
+            setup = ['/bin/sh', bundle/'Install on macOS.command']
+            removal = ['/bin/sh', bundle/'Uninstall on macOS.command']
+        command(setup, cwd, env)
+        require(len(list(user.rglob('salvage.pyz'))) == 1,
+                'clickable setup helper did not install in the temporary profile')
+        command(removal, cwd, env)
+        require(not list(user.rglob('salvage.pyz')), 'clickable removal helper left the payload')
+        proof['checks'].append('clickable setup/removal helper bodies work with an existing Python in a temporary profile')
     require(snapshot(kit) == before, "organizer fixtures were modified by release checks")
     proof["checks"].extend(["all ten adapters discovered from the portable archive",
                             "organizer fixtures unchanged", "version and help work outside the repository",
