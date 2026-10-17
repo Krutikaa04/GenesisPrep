@@ -1,0 +1,175 @@
+{
+  "after": {
+    "method": "One traced parsing+JSON run per case; fixture/input allocation excluded; not process RSS or a timing guarantee.",
+    "platform": "macOS-27.0.1-arm64-arm-64bit",
+    "policy_sources_sha256": {
+      "_large.py": "60ba00f8389128f3f3c9dd6a6fd1b4035d20d3e2e0a5643f6dbb855f42119081",
+      "_large_libra.py": "624721f9cf770445558b3407ca337e1bffeada55463213a2943eb9c24179f1cd",
+      "_limits.py": "8f45625c5e47982e014b5fdfc34db2f0b908453010415f0a26114cfa15c3face"
+    },
+    "python": "3.12.15",
+    "rows": [
+      {
+        "case": "valid-long-records",
+        "damage": [],
+        "elapsed_ms": 955.302,
+        "format": "LIBRA-98",
+        "input_bytes": 2107422,
+        "input_sha256": "257f2b6f4b836213ddea68025574e5ffd2e077a18cc1f0e1c260c558f903fbc7",
+        "json_bytes": 3485251,
+        "peak_traced_bytes": 13979482,
+        "records": 8200,
+        "status": "ok"
+      },
+      {
+        "case": "output-pressure",
+        "damage": [
+          {
+            "detail": "LIBRA-98 projected output exceeds the 16777216-unit safety budget",
+            "kind": "bad_length",
+            "lossy": true,
+            "offset": 0
+          }
+        ],
+        "elapsed_ms": 312.776,
+        "format": "LIBRA-98",
+        "input_bytes": 2109992,
+        "input_sha256": "508eaae97f565e450611dbadbcdc7b4fd21f45bd3608ade904b8785f73b18777",
+        "json_bytes": 265,
+        "peak_traced_bytes": 68539,
+        "records": 0,
+        "status": "failed"
+      },
+      {
+        "case": "hostile-count",
+        "damage": [
+          {
+            "detail": "LIBRA-98 input exceeds the 2097152-byte legacy decoder safety limit",
+            "kind": "bad_length",
+            "lossy": true,
+            "offset": 0
+          }
+        ],
+        "elapsed_ms": 309.322,
+        "format": "LIBRA-98",
+        "input_bytes": 2107422,
+        "input_sha256": "6bd976c891a8b4df03e8cd3482f8dce5d5fa194d351611220642dabad1201a11",
+        "json_bytes": 265,
+        "peak_traced_bytes": 68539,
+        "records": 0,
+        "status": "failed"
+      },
+      {
+        "case": "hostile-length",
+        "damage": [
+          {
+            "detail": "LIBRA-98 input exceeds the 2097152-byte legacy decoder safety limit",
+            "kind": "bad_length",
+            "lossy": true,
+            "offset": 0
+          }
+        ],
+        "elapsed_ms": 0.111,
+        "format": "LIBRA-98",
+        "input_bytes": 2107422,
+        "input_sha256": "6340876d76bfb4daa6a1972497329985506c91c95d1686879f30c3255adfeb5b",
+        "json_bytes": 266,
+        "peak_traced_bytes": 66213,
+        "records": 0,
+        "status": "failed"
+      }
+    ],
+    "schema_version": 1
+  },
+  "baseline_policy": "435c07e coarse refusal replay; helpers disabled; unchanged LIBRA decoder",
+  "before": {
+    "method": "One traced parsing+JSON run per case; fixture/input allocation excluded; not process RSS or a timing guarantee.",
+    "platform": "macOS-27.0.1-arm64-arm-64bit",
+    "policy": "Original coarse refusal replay; helpers disabled, decoders unchanged.",
+    "policy_sources_sha256": {
+      "_large.py": "60ba00f8389128f3f3c9dd6a6fd1b4035d20d3e2e0a5643f6dbb855f42119081",
+      "_large_libra.py": "624721f9cf770445558b3407ca337e1bffeada55463213a2943eb9c24179f1cd",
+      "_limits.py": "8f45625c5e47982e014b5fdfc34db2f0b908453010415f0a26114cfa15c3face"
+    },
+    "python": "3.12.15",
+    "rows": [
+      {
+        "case": "valid-long-records",
+        "damage": [
+          {
+            "detail": "LIBRA-98 input exceeds the 2097152-byte legacy decoder safety limit",
+            "kind": "bad_length",
+            "lossy": true,
+            "offset": 0
+          }
+        ],
+        "elapsed_ms": 0.301,
+        "format": "LIBRA-98",
+        "input_bytes": 2107422,
+        "input_sha256": "257f2b6f4b836213ddea68025574e5ffd2e077a18cc1f0e1c260c558f903fbc7",
+        "json_bytes": 270,
+        "peak_traced_bytes": 67317,
+        "records": 0,
+        "status": "failed"
+      },
+      {
+        "case": "output-pressure",
+        "damage": [
+          {
+            "detail": "LIBRA-98 input exceeds the 2097152-byte legacy decoder safety limit",
+            "kind": "bad_length",
+            "lossy": true,
+            "offset": 0
+          }
+        ],
+        "elapsed_ms": 0.175,
+        "format": "LIBRA-98",
+        "input_bytes": 2109992,
+        "input_sha256": "508eaae97f565e450611dbadbcdc7b4fd21f45bd3608ade904b8785f73b18777",
+        "json_bytes": 267,
+        "peak_traced_bytes": 67005,
+        "records": 0,
+        "status": "failed"
+      },
+      {
+        "case": "hostile-count",
+        "damage": [
+          {
+            "detail": "LIBRA-98 input exceeds the 2097152-byte legacy decoder safety limit",
+            "kind": "bad_length",
+            "lossy": true,
+            "offset": 0
+          }
+        ],
+        "elapsed_ms": 0.1,
+        "format": "LIBRA-98",
+        "input_bytes": 2107422,
+        "input_sha256": "6bd976c891a8b4df03e8cd3482f8dce5d5fa194d351611220642dabad1201a11",
+        "json_bytes": 265,
+        "peak_traced_bytes": 66997,
+        "records": 0,
+        "status": "failed"
+      },
+      {
+        "case": "hostile-length",
+        "damage": [
+          {
+            "detail": "LIBRA-98 input exceeds the 2097152-byte legacy decoder safety limit",
+            "kind": "bad_length",
+            "lossy": true,
+            "offset": 0
+          }
+        ],
+        "elapsed_ms": 0.089,
+        "format": "LIBRA-98",
+        "input_bytes": 2107422,
+        "input_sha256": "6340876d76bfb4daa6a1972497329985506c91c95d1686879f30c3255adfeb5b",
+        "json_bytes": 266,
+        "peak_traced_bytes": 66989,
+        "records": 0,
+        "status": "failed"
+      }
+    ],
+    "schema_version": 1
+  }
+}
