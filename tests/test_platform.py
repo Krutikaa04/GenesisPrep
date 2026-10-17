@@ -84,9 +84,11 @@ class Platform(unittest.TestCase):
         self.assertEqual([d["offset"] for d in result.to_dict()["damage"]], [0, 4])
 
     def test_legacy_resource_refusal_preserves_identified_format(self):
-        from deadbits import _limits
+        from deadbits import _large, _limits
         from deadbits.formats import lablog
-        with patch.object(_limits, "MAX_STRUCTURAL_ITEMS", 1), patch.object(lablog, "decode") as decode:
+        # A coarse size projection now permits a proved affordable path. Force
+        # the actual physical-item budget too, preserving refusal-before-decode.
+        with patch.object(_limits, "MAX_STRUCTURAL_ITEMS", 1), patch.object(_large, "MAX_ITEMS", 1), patch.object(lablog, "decode") as decode:
             result = engine.salvage_bytes((SAMPLES / "s05.dat").read_bytes(), "large-log")
         decode.assert_not_called()
         self.assertEqual((result.format, result.status), ("LABLOG", "failed"))
