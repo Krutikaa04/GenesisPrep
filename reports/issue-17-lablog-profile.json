@@ -1,0 +1,213 @@
+{
+  "after": {
+    "method": "One traced parsing+JSON run per case; fixture/input allocation excluded; not process RSS or a timing guarantee.",
+    "platform": "macOS-27.0.1-arm64-arm-64bit",
+    "policy_sources_sha256": {
+      "_large.py": "60ba00f8389128f3f3c9dd6a6fd1b4035d20d3e2e0a5643f6dbb855f42119081",
+      "_large_lablog.py": "f53e75c892a0e6c5f1e936a3375db7b85ae21d58deeede57f6ddd28a9b76d396",
+      "_limits.py": "8f45625c5e47982e014b5fdfc34db2f0b908453010415f0a26114cfa15c3face"
+    },
+    "python": "3.12.15",
+    "rows": [
+      {
+        "case": "valid-events",
+        "damage": [],
+        "elapsed_ms": 24050.289,
+        "format": "LABLOG",
+        "input_bytes": 2310061,
+        "input_sha256": "e570f064c4339c22255644ece47d579136a00352fbebc1a42c43a303fd65e191",
+        "json_bytes": 2695351,
+        "peak_traced_bytes": 10167553,
+        "records": 1,
+        "status": "ok"
+      },
+      {
+        "case": "dense-samples",
+        "damage": [
+          {
+            "detail": "LABLOG projected output exceeds the 16777216-unit safety budget",
+            "kind": "bad_length",
+            "lossy": true,
+            "offset": 0
+          }
+        ],
+        "elapsed_ms": 5.554,
+        "format": "LABLOG",
+        "input_bytes": 305450,
+        "input_sha256": "df53c6f2ed5d2ffbb3e9a22ced29894f51f23dd0a5390cbe77d2417bbf813edf",
+        "json_bytes": 258,
+        "peak_traced_bytes": 2385,
+        "records": 0,
+        "status": "failed"
+      },
+      {
+        "case": "event-output-pressure",
+        "damage": [
+          {
+            "detail": "LABLOG projected output exceeds the 16777216-unit safety budget",
+            "kind": "bad_length",
+            "lossy": true,
+            "offset": 0
+          }
+        ],
+        "elapsed_ms": 309.563,
+        "format": "LABLOG",
+        "input_bytes": 2730061,
+        "input_sha256": "e5c2305e5dceea887e458a91f82a6fb4eee3364bda96d581ef4f379787f6da27",
+        "json_bytes": 267,
+        "peak_traced_bytes": 66555,
+        "records": 0,
+        "status": "failed"
+      },
+      {
+        "case": "bad-header-crc",
+        "damage": [
+          {
+            "detail": "LABLOG input exceeds the 2097152-byte legacy decoder safety limit",
+            "kind": "bad_length",
+            "lossy": true,
+            "offset": 0
+          }
+        ],
+        "elapsed_ms": 0.482,
+        "format": "LABLOG",
+        "input_bytes": 2310061,
+        "input_sha256": "e366769178aaac7d687abf3820d360582324af7a54503fa6aa38ea996d5770e1",
+        "json_bytes": 262,
+        "peak_traced_bytes": 66299,
+        "records": 0,
+        "status": "failed"
+      },
+      {
+        "case": "bad-block-crc",
+        "damage": [
+          {
+            "detail": "LABLOG input exceeds the 2097152-byte legacy decoder safety limit",
+            "kind": "bad_length",
+            "lossy": true,
+            "offset": 0
+          }
+        ],
+        "elapsed_ms": 266.384,
+        "format": "LABLOG",
+        "input_bytes": 2310061,
+        "input_sha256": "0b1ee3e1f41d61c5bd2e836b7cc8e2948720d01762188fac6398813c1a21ca98",
+        "json_bytes": 261,
+        "peak_traced_bytes": 66555,
+        "records": 0,
+        "status": "failed"
+      }
+    ],
+    "schema_version": 1
+  },
+  "baseline_policy": "435c07e coarse refusal replay; helpers disabled; unchanged LABLOG decoder",
+  "before": {
+    "method": "One traced parsing+JSON run per case; fixture/input allocation excluded; not process RSS or a timing guarantee.",
+    "platform": "macOS-27.0.1-arm64-arm-64bit",
+    "policy": "Original coarse refusal replay; helpers disabled, decoders unchanged.",
+    "policy_sources_sha256": {
+      "_large.py": "60ba00f8389128f3f3c9dd6a6fd1b4035d20d3e2e0a5643f6dbb855f42119081",
+      "_large_lablog.py": "f53e75c892a0e6c5f1e936a3375db7b85ae21d58deeede57f6ddd28a9b76d396",
+      "_limits.py": "8f45625c5e47982e014b5fdfc34db2f0b908453010415f0a26114cfa15c3face"
+    },
+    "python": "3.12.15",
+    "rows": [
+      {
+        "case": "valid-events",
+        "damage": [
+          {
+            "detail": "LABLOG input exceeds the 2097152-byte legacy decoder safety limit",
+            "kind": "bad_length",
+            "lossy": true,
+            "offset": 0
+          }
+        ],
+        "elapsed_ms": 3.287,
+        "format": "LABLOG",
+        "input_bytes": 2310061,
+        "input_sha256": "e570f064c4339c22255644ece47d579136a00352fbebc1a42c43a303fd65e191",
+        "json_bytes": 260,
+        "peak_traced_bytes": 67139,
+        "records": 0,
+        "status": "failed"
+      },
+      {
+        "case": "dense-samples",
+        "damage": [
+          {
+            "detail": "LABLOG conservative structural-item projection exceeds the 100000-item safety budget",
+            "kind": "bad_length",
+            "lossy": true,
+            "offset": 0
+          }
+        ],
+        "elapsed_ms": 0.953,
+        "format": "LABLOG",
+        "input_bytes": 305450,
+        "input_sha256": "df53c6f2ed5d2ffbb3e9a22ced29894f51f23dd0a5390cbe77d2417bbf813edf",
+        "json_bytes": 279,
+        "peak_traced_bytes": 3197,
+        "records": 0,
+        "status": "failed"
+      },
+      {
+        "case": "event-output-pressure",
+        "damage": [
+          {
+            "detail": "LABLOG input exceeds the 2097152-byte legacy decoder safety limit",
+            "kind": "bad_length",
+            "lossy": true,
+            "offset": 0
+          }
+        ],
+        "elapsed_ms": 0.642,
+        "format": "LABLOG",
+        "input_bytes": 2730061,
+        "input_sha256": "e5c2305e5dceea887e458a91f82a6fb4eee3364bda96d581ef4f379787f6da27",
+        "json_bytes": 269,
+        "peak_traced_bytes": 67123,
+        "records": 0,
+        "status": "failed"
+      },
+      {
+        "case": "bad-header-crc",
+        "damage": [
+          {
+            "detail": "LABLOG input exceeds the 2097152-byte legacy decoder safety limit",
+            "kind": "bad_length",
+            "lossy": true,
+            "offset": 0
+          }
+        ],
+        "elapsed_ms": 2.936,
+        "format": "LABLOG",
+        "input_bytes": 2310061,
+        "input_sha256": "e366769178aaac7d687abf3820d360582324af7a54503fa6aa38ea996d5770e1",
+        "json_bytes": 262,
+        "peak_traced_bytes": 67115,
+        "records": 0,
+        "status": "failed"
+      },
+      {
+        "case": "bad-block-crc",
+        "damage": [
+          {
+            "detail": "LABLOG input exceeds the 2097152-byte legacy decoder safety limit",
+            "kind": "bad_length",
+            "lossy": true,
+            "offset": 0
+          }
+        ],
+        "elapsed_ms": 0.573,
+        "format": "LABLOG",
+        "input_bytes": 2310061,
+        "input_sha256": "0b1ee3e1f41d61c5bd2e836b7cc8e2948720d01762188fac6398813c1a21ca98",
+        "json_bytes": 261,
+        "peak_traced_bytes": 67299,
+        "records": 0,
+        "status": "failed"
+      }
+    ],
+    "schema_version": 1
+  }
+}
