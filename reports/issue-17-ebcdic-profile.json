@@ -1,0 +1,236 @@
+{
+  "after": {
+    "method": "One traced parsing+JSON run per case; fixture/input allocation excluded; not process RSS or a timing guarantee.",
+    "platform": "macOS-27.0.1-arm64-arm-64bit",
+    "policy_sources_sha256": {
+      "_large.py": "13f57637d58d440f108596e7348c3460efd10b7738c586254a37be87294176d1",
+      "_large_ebcdic.py": "945e10a496c02b06f5f9a3152c96a755d1c67353d2f0535f9db40040649606c8",
+      "_limits.py": "8f45625c5e47982e014b5fdfc34db2f0b908453010415f0a26114cfa15c3face"
+    },
+    "python": "3.12.15",
+    "rows": [
+      {
+        "case": "valid-v",
+        "damage": [],
+        "elapsed_ms": 810.629,
+        "format": "EBCDIC-DUMP",
+        "input_bytes": 576047,
+        "input_sha256": "b41227958e2457640b3bfd5e3dec911c2c87cad958b3ec194a3fa9ccb40dc432",
+        "json_bytes": 1584217,
+        "peak_traced_bytes": 8948080,
+        "records": 12000,
+        "status": "ok"
+      },
+      {
+        "case": "valid-vb",
+        "damage": [],
+        "elapsed_ms": 815.129,
+        "format": "EBCDIC-DUMP",
+        "input_bytes": 576099,
+        "input_sha256": "0328e582fd5f85c770430705326f71ac20921a9a5fa8074fd8e479345140917a",
+        "json_bytes": 1584218,
+        "peak_traced_bytes": 8941091,
+        "records": 12000,
+        "status": "ok"
+      },
+      {
+        "case": "valid-metadata-heavy",
+        "damage": [],
+        "elapsed_ms": 2264.408,
+        "format": "EBCDIC-DUMP",
+        "input_bytes": 2145062,
+        "input_sha256": "1befe6440e20beb786d1c312169c60f2e21c7149ec32b2c36adae8f873300721",
+        "json_bytes": 354,
+        "peak_traced_bytes": 67819,
+        "records": 1,
+        "status": "ok"
+      },
+      {
+        "case": "student-output-pressure",
+        "damage": [
+          {
+            "detail": "EBCDIC-DUMP projected output exceeds the 16777216-unit safety budget",
+            "kind": "bad_length",
+            "lossy": true,
+            "offset": 0
+          }
+        ],
+        "elapsed_ms": 112.257,
+        "format": "EBCDIC-DUMP",
+        "input_bytes": 816047,
+        "input_sha256": "6edb669cfe74106cb8b3642555e2e6cd9c2866099a9160eb37b5442e495c2ec5",
+        "json_bytes": 278,
+        "peak_traced_bytes": 2242,
+        "records": 0,
+        "status": "failed"
+      },
+      {
+        "case": "dense-unknown-rdw",
+        "damage": [
+          {
+            "detail": "EBCDIC-DUMP conservative structural-item projection exceeds the 100000-item safety budget",
+            "kind": "bad_length",
+            "lossy": true,
+            "offset": 0
+          }
+        ],
+        "elapsed_ms": 0.155,
+        "format": "EBCDIC-DUMP",
+        "input_bytes": 550033,
+        "input_sha256": "f148577bcaaf553a33ec89dd3287f7e12f1bc138fb39c2a89da0090186d8697b",
+        "json_bytes": 293,
+        "peak_traced_bytes": 2200,
+        "records": 0,
+        "status": "failed"
+      },
+      {
+        "case": "invalid-bdw",
+        "damage": [
+          {
+            "detail": "EBCDIC-DUMP conservative structural-item projection exceeds the 100000-item safety budget",
+            "kind": "bad_length",
+            "lossy": true,
+            "offset": 0
+          }
+        ],
+        "elapsed_ms": 0.188,
+        "format": "EBCDIC-DUMP",
+        "input_bytes": 576099,
+        "input_sha256": "ea5c4b7d1fbd4b3ad4c7b7f7757708f300d6af11981f2fc16d4d28da93b249e9",
+        "json_bytes": 287,
+        "peak_traced_bytes": 2181,
+        "records": 0,
+        "status": "failed"
+      }
+    ],
+    "schema_version": 1
+  },
+  "baseline_policy": "435c07e coarse refusal replay; helpers disabled; unchanged EBCDIC decoder",
+  "before": {
+    "method": "One traced parsing+JSON run per case; fixture/input allocation excluded; not process RSS or a timing guarantee.",
+    "platform": "macOS-27.0.1-arm64-arm-64bit",
+    "policy": "Original coarse refusal replay; helpers disabled, decoders unchanged.",
+    "policy_sources_sha256": {
+      "_large.py": "60ba00f8389128f3f3c9dd6a6fd1b4035d20d3e2e0a5643f6dbb855f42119081",
+      "_limits.py": "8f45625c5e47982e014b5fdfc34db2f0b908453010415f0a26114cfa15c3face"
+    },
+    "python": "3.12.15",
+    "rows": [
+      {
+        "case": "valid-v",
+        "damage": [
+          {
+            "detail": "EBCDIC-DUMP conservative structural-item projection exceeds the 100000-item safety budget",
+            "kind": "bad_length",
+            "lossy": true,
+            "offset": 0
+          }
+        ],
+        "elapsed_ms": 0.228,
+        "format": "EBCDIC-DUMP",
+        "input_bytes": 576047,
+        "input_sha256": "b41227958e2457640b3bfd5e3dec911c2c87cad958b3ec194a3fa9ccb40dc432",
+        "json_bytes": 283,
+        "peak_traced_bytes": 3837,
+        "records": 0,
+        "status": "failed"
+      },
+      {
+        "case": "valid-vb",
+        "damage": [
+          {
+            "detail": "EBCDIC-DUMP conservative structural-item projection exceeds the 100000-item safety budget",
+            "kind": "bad_length",
+            "lossy": true,
+            "offset": 0
+          }
+        ],
+        "elapsed_ms": 0.239,
+        "format": "EBCDIC-DUMP",
+        "input_bytes": 576099,
+        "input_sha256": "0328e582fd5f85c770430705326f71ac20921a9a5fa8074fd8e479345140917a",
+        "json_bytes": 284,
+        "peak_traced_bytes": 3277,
+        "records": 0,
+        "status": "failed"
+      },
+      {
+        "case": "valid-metadata-heavy",
+        "damage": [
+          {
+            "detail": "EBCDIC-DUMP input exceeds the 2097152-byte legacy decoder safety limit",
+            "kind": "bad_length",
+            "lossy": true,
+            "offset": 0
+          }
+        ],
+        "elapsed_ms": 0.192,
+        "format": "EBCDIC-DUMP",
+        "input_bytes": 2145062,
+        "input_sha256": "1befe6440e20beb786d1c312169c60f2e21c7149ec32b2c36adae8f873300721",
+        "json_bytes": 278,
+        "peak_traced_bytes": 67192,
+        "records": 0,
+        "status": "failed"
+      },
+      {
+        "case": "student-output-pressure",
+        "damage": [
+          {
+            "detail": "EBCDIC-DUMP conservative structural-item projection exceeds the 100000-item safety budget",
+            "kind": "bad_length",
+            "lossy": true,
+            "offset": 0
+          }
+        ],
+        "elapsed_ms": 0.185,
+        "format": "EBCDIC-DUMP",
+        "input_bytes": 816047,
+        "input_sha256": "6edb669cfe74106cb8b3642555e2e6cd9c2866099a9160eb37b5442e495c2ec5",
+        "json_bytes": 299,
+        "peak_traced_bytes": 3190,
+        "records": 0,
+        "status": "failed"
+      },
+      {
+        "case": "dense-unknown-rdw",
+        "damage": [
+          {
+            "detail": "EBCDIC-DUMP conservative structural-item projection exceeds the 100000-item safety budget",
+            "kind": "bad_length",
+            "lossy": true,
+            "offset": 0
+          }
+        ],
+        "elapsed_ms": 0.107,
+        "format": "EBCDIC-DUMP",
+        "input_bytes": 550033,
+        "input_sha256": "f148577bcaaf553a33ec89dd3287f7e12f1bc138fb39c2a89da0090186d8697b",
+        "json_bytes": 293,
+        "peak_traced_bytes": 3296,
+        "records": 0,
+        "status": "failed"
+      },
+      {
+        "case": "invalid-bdw",
+        "damage": [
+          {
+            "detail": "EBCDIC-DUMP conservative structural-item projection exceeds the 100000-item safety budget",
+            "kind": "bad_length",
+            "lossy": true,
+            "offset": 0
+          }
+        ],
+        "elapsed_ms": 0.16,
+        "format": "EBCDIC-DUMP",
+        "input_bytes": 576099,
+        "input_sha256": "ea5c4b7d1fbd4b3ad4c7b7f7757708f300d6af11981f2fc16d4d28da93b249e9",
+        "json_bytes": 287,
+        "peak_traced_bytes": 3149,
+        "records": 0,
+        "status": "failed"
+      }
+    ],
+    "schema_version": 1
+  }
+}

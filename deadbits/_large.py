@@ -30,7 +30,9 @@ def resource_issue(data, fmt, coarse_reason):
         reason = module.resource_issue(data, coarse_reason)
     except Exception:
         return coarse_reason + "; large-input preflight could not establish a safe bound"
-    return reason if reason is None or isinstance(reason, str) else coarse_reason
+    if reason is None:
+        return None
+    return reason if isinstance(reason, str) and reason else coarse_reason
 
 
 def budget_issue(fmt, work, output, items):
