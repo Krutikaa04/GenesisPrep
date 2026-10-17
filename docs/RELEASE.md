@@ -8,10 +8,10 @@ branch. Do not reset or force-push the diverged release/0.1 branch to integrate
 this work; use a reviewed pull request into master.
 
 The sole application version is the VERSION literal in deadbits/version.py.
-The current 0.2.0-dev value identifies unpublished development code, including
-newer BRAVO and platform changes. CLI --version, report.json and built artifacts
-must agree. The current development code includes the visual demo, dynamic
-reference accuracy and beginner welcome menu. It is not a published final release.
+The 0.2.0 version includes newer BRAVO and platform changes, the visual demo,
+dynamic reference accuracy and the beginner welcome menu. CLI --version,
+report.json and built artifacts must agree. Publication is a separate,
+explicitly authorized operation using the matching version tag and artifacts.
 Published v0.1.0 remains unchanged and had 370 tests; use
 unittest discovery for the current checkout's count.
 

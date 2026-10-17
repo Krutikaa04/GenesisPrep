@@ -16,7 +16,7 @@ From an installed or portable application, select an external local kit:
 
 ```sh
 salvage --verify --kit-dir "/path/to/organizer kit" --evidence-dir "/path/to/new evidence"
-python salvage-0.2.0-dev.pyz --verify --samples-dir "/path/to/input samples" --expected-dir "/path/to/answers" --evidence-dir /tmp/portable-proof
+python salvage-0.2.0.pyz --verify --samples-dir "/path/to/input samples" --expected-dir "/path/to/answers" --evidence-dir /tmp/portable-proof
 ```
 
 Installed applications do not bundle the organizer fixtures. Missing paths,

@@ -15,7 +15,7 @@ recovery and validation output formats remain unchanged.
 salvage --demo --kit-dir /path/to/organizer-kit --source-dir /path/to/source-checkout --output-dir /path/to/new-demo
 salvage --demo --help
 python -m deadbits.demo --kit-dir /path/to/organizer-kit --output-dir /path/to/other-demo --guided
-python salvage-0.2.0-dev.pyz --demo --kit-dir /path/to/kit --source-dir /path/to/source-checkout --output-dir /path/to/portable-demo
+python salvage-0.2.0.pyz --demo --kit-dir /path/to/kit --source-dir /path/to/source-checkout --output-dir /path/to/portable-demo
 ```
 
 Both kit and output paths are explicit. The kit contains `samples/` and
