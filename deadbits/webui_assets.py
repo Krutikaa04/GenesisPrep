@@ -236,6 +236,23 @@ pre.json{font:12.5px/1.6 var(--mono);margin:0;max-height:480px;overflow:auto;pad
 .toast{background:var(--ink);color:var(--paper);padding:11px 16px;border-radius:12px;font-size:14px;box-shadow:var(--shadow);animation:rise .18s ease-out}
 .toast.err{background:var(--lost);color:#fff}
 @keyframes rise{from{transform:translateY(8px);opacity:0}}
+
+/* measured accuracy (additions only) */
+.acc-basis{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--tone-bg)}
+.acc-basis strong{color:var(--ink)}
+.acc-basis .badge{background:var(--raised)}
+.metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-top:14px}
+.metric{display:grid;gap:2px;padding:14px 16px;border:1px solid var(--line);border-radius:12px;background:var(--raised)}
+.metric b{font:700 30px/1.05 var(--serif);letter-spacing:-.01em}
+.metric .ml{font-weight:650;font-size:13px}.metric .mn{font:12px var(--mono);color:var(--muted)}
+.acc-sentence{margin:14px 0 0;font-size:16px;max-width:70ch}
+.acc-warn{margin-top:14px;padding:14px 16px;border-radius:12px;background:var(--partial-bg);color:var(--partial);border:1px solid color-mix(in srgb,var(--partial) 35%,transparent)}
+.acc-warn p{margin:6px 0 0;color:var(--ink2);font-size:13.5px}
+.acc-h{font:650 14px var(--sans);margin:22px 0 10px}
+.how{margin-top:18px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+.how summary{cursor:pointer;padding:11px 14px;font-weight:600;font-size:13.5px}
+.defs{margin:0;padding:0 14px 14px;display:grid;gap:10px}
+.defs dt{font-weight:650;font-size:13px}.defs dd{margin:2px 0 0;color:var(--ink2);font-size:13px}
 @media (max-width:980px){
   .layout{grid-template-columns:1fr}
   .side{position:static;height:auto;border-right:0;border-bottom:1px solid var(--line)}
@@ -425,7 +442,7 @@ function recover(){
   S.busy='run';render();
   api('/api/sessions/'+S.session+'/run',{method:'POST'}).then(function(r){
     S.run=r;S.selected=r.files.length===1?r.files[0].name:'__report__';S.tab='records';
-    S.busy=null;render();$('main').focus({preventScroll:true});window.scrollTo(0,0);
+    S.busy=null;render();$('main').focus({preventScroll:true});window.scrollTo(0,0);loadAccuracy();
   }).catch(function(e){S.busy=null;if(!sessionGone(e)){toast(e.message,true);render();}});
 }
 function clearAll(){
@@ -649,6 +666,7 @@ function renderBatch(){
         return h('tr',{style:'cursor:pointer',onclick:function(){select(row.file);}},h('td',null,row.file),h('td',null,row.format),
           h('td',null,h('span',{class:'badge t-'+st.tone},row.status)),h('td',null,row.records),h('td',null,row.damage));
       }))))));
+  inner.appendChild(accuracyCard());
   if(r.stderr.length)inner.appendChild(h('section',{class:'card'},h('h3',null,'Messages from the tool'),h('p',{class:'desc'},'The command line prints these to its error stream.'),h('div',{class:'notes'},r.stderr.join('\n'))));
   inner.appendChild(h('div',{style:'display:flex;gap:10px;margin-top:18px;flex-wrap:wrap'},
     h('a',{class:'btn',href:'/api/sessions/'+S.session+'/out/report.json',download:'report.json'},icon('download'),'Download report.json')));
@@ -821,7 +839,7 @@ function renderFile(f){
         h('div',{class:'stat'+(u?' warn':'')},h('b',null,u),h('span',null,'unverified')),
         h('div',{class:'stat'+(l?' bad':'')},h('b',null,l),h('span',null,'data lost')))),
     h('div',{style:'margin-top:20px'},fileMap(f))));
-  var tabs=[['records','Records',doc.records.length],['damage','Damage',doc.damage.length],['bytes','Bytes'],['details','Details'],['json','JSON']];
+  var tabs=[['records','Records',doc.records.length],['damage','Damage',doc.damage.length],['bytes','Bytes'],['details','Details'],['json','JSON'],['accuracy','Accuracy']];
   var bar=h('div',{class:'tabs',role:'tablist','aria-label':'Details'});
   tabs.forEach(function(tb){
     var el=h('button',{class:'tab',type:'button',role:'tab','aria-selected':S.tab===tb[0]?'true':'false',tabindex:S.tab===tb[0]?'0':'-1',
@@ -831,9 +849,118 @@ function renderFile(f){
     bar.appendChild(el);
   });
   inner.appendChild(bar);
-  var panels={records:recordsPanel,damage:damagePanel,bytes:bytesPanel,details:detailsPanel,json:jsonPanel};
+  var panels={records:recordsPanel,damage:damagePanel,bytes:bytesPanel,details:detailsPanel,json:jsonPanel,accuracy:accuracyPanel};
   inner.appendChild(panels[S.tab]?panels[S.tab](f):recordsPanel(f));
   return inner;
+}
+
+/* ---------- measured accuracy (additive: its own tab and batch card) ---------- */
+function pct(v){return v===null||v===undefined?'-':(Math.round(v*1000)/10)+'%';}
+function ratioText(r){return r&&r.denominator?r.numerator+' of '+r.denominator:'no records to compare';}
+function fmtVal(v){
+  if(v===undefined)return '(missing)';
+  var s=v===null?'null':(typeof v==='object'?JSON.stringify(v):String(v));
+  return s.length>90?s.slice(0,90)+'...':s;
+}
+var BASIS_TONE={'organizer':'ok','organizer-damaged':'prot','undamaged':'partial','none':'unknown'};
+var BASIS_SHORT={'organizer':'Organizer answer key','organizer-damaged':'Organizer key, damaged copies','undamaged':'Undamaged copy (regression)'};
+function howMeasured(){
+  var d=h('details',{class:'how'},h('summary',null,'How is this measured?'));
+  var dl=h('dl',{class:'defs'});
+  [['Recovery','Records present in the recovered file, divided by the records in the answer key.'],
+   ['Accuracy','Records whose every graded field equals the answer key, divided by the records in the key. A missing or wrong record counts as not accurate.'],
+   ['Precision','Exactly right records, divided by recovered records plus extra records the key does not contain.'],
+   ['Field accuracy','Individual fields that match the key, divided by all fields in the key.'],
+   ['Answer key','The organizer’s published expected output for a kit file. For a damaged copy the key is that same file before damage. Where none is published, a damaged copy is compared with this tool’s own verified output for the undamaged file, which is a regression check and is labelled so.'],
+   ['What it does not claim','These figures describe this file only. They are not a prediction for other files, and files without an answer key are never scored.']
+  ].forEach(function(p){dl.appendChild(h('dt',null,p[0]));dl.appendChild(h('dd',null,p[1]));});
+  d.appendChild(dl);return d;
+}
+function metric(label,ratio,value,hint){
+  return h('div',{class:'metric',title:hint},h('b',null,pct(value)),h('span',{class:'ml'},label),h('span',{class:'mn'},ratioText(ratio)));
+}
+function accuracySentence(a){
+  var c=a.counts,n=c.expected;
+  if(!n)return 'The answer key lists no records for this file.';
+  if(c.correct===n&&!c.unexpected)return 'All '+plural(n,'record')+' match the answer key, field for field.';
+  var bits=[c.correct+' of '+plural(n,'record')+(n===1?' is':' are')+' exactly right'];
+  if(c.wrong)bits.push(c.wrong+(c.wrong===1?' is wrong':' are wrong'));
+  if(c.missing)bits.push(c.missing+(c.missing===1?' is gone':' are gone'));
+  var s=bits.join(', ')+'.';
+  if(c.unexpected)s+=' '+plural(c.unexpected,'extra record')+' the answer key does not contain.';
+  return s;
+}
+function accuracyPanel(f){
+  var wrap=h('div',{class:'panel'}),acc=S.run.accuracy;
+  if(!acc){wrap.appendChild(h('div',{class:'empty'},'Measuring accuracy...'));return wrap;}
+  var a=acc.files[f.name];
+  if(!a){wrap.appendChild(h('div',{class:'empty'},'No accuracy information for this file.'));return wrap;}
+  var tone=BASIS_TONE[a.basis]||'unknown';
+  wrap.appendChild(h('div',{class:'acc-basis t-'+tone},h('span',{class:'badge t-'+tone},a.basis==='none'?'No answer key':'Measured against'),
+    h('strong',null,a.basisLabel),a.sample&&a.basis!=='none'?h('span',{class:'tiny'},'kit file '+a.sample):null));
+  if(!a.available){
+    wrap.appendChild(h('div',{class:'empty',style:'margin-top:12px'},a.reason||'No answer key is available.'));
+    var doc=f.doc;
+    if(doc)wrap.appendChild(h('p',{class:'cap'},'What the tool can still tell you, without a key: '+plural(doc.records.length,'record')+' recovered, '+unverifiedCount(doc)+' flagged unverified, '+lossyCount(doc)+' damage entr'+(lossyCount(doc)===1?'y':'ies')+' with data lost. These are signals, not an accuracy figure.'));
+    wrap.appendChild(howMeasured());return wrap;
+  }
+  var m=a.counts.measurements;
+  wrap.appendChild(h('div',{class:'metrics'},
+    metric('Recovery',m.recovery,m.recovery.value,'Records present divided by records in the answer key'),
+    metric('Accuracy',m.accuracy,m.accuracy.value,'Records exactly right divided by records in the answer key'),
+    metric('Precision',m.precision,m.precision.value,'Exactly right divided by recovered plus extra records'),
+    metric('Field accuracy',{numerator:a.fields.correct,denominator:a.fields.expected},a.fields.expected?a.fields.correct/a.fields.expected:null,'Fields that match divided by fields in the key')));
+  wrap.appendChild(h('p',{class:'acc-sentence'},accuracySentence(a)));
+  if(a.basis==='undamaged')wrap.appendChild(h('p',{class:'cap'},'This is a regression comparison: the key is this tool’s own verified output for the undamaged file, so it shows how much survives damage, not independent correctness.'));
+  if(a.agreement)wrap.appendChild(h('div',{class:'chips',style:'margin-top:10px'},
+    h('span',{class:'chip t-'+(a.agreement.status?'ok':'lost')},'Status '+(a.agreement.status?'matches':'differs from')+' the key'),
+    h('span',{class:'chip t-'+(a.agreement.damage?'ok':'lost')},'Damage report '+(a.agreement.damage?'matches':'differs from')+' the key'),
+    h('span',{class:'chip t-'+(a.agreement.metadata?'ok':'lost')},'Metadata '+(a.agreement.metadata?'matches':'differs from')+' the key')));
+  if(a.falseVerified>0){
+    var why=a.integrity==='checksum'?'This format has checksums, so a wrong value should have been caught: treat this as a defect to report.'
+      :(a.integrity==='size'?'This format only checks sizes, which cannot catch a change that keeps the length the same.'
+        :'This format has no checksum or size check that could catch a change like this.');
+    wrap.appendChild(h('div',{class:'acc-warn'},h('b',null,plural(a.falseVerified,'record')+(a.falseVerified===1?' is':' are')+' wrong but was not flagged as unverified.'),
+      h('p',null,why+' So "verified" means "no check failed", not "proven correct". This is the system’s honest limit for this kind of damage.')));
+  }
+  if(a.wrong.length){
+    var tb=h('tbody');
+    a.wrong.forEach(function(w){
+      w.fields.forEach(function(d,i){
+        tb.appendChild(h('tr',{class:w.verified?'':'unv'},h('td',null,i===0?w.key.join(', '):''),h('td',null,d.field),h('td',null,fmtVal(d.expected)),h('td',null,fmtVal(d.actual)),
+          h('td',null,i===0?(w.verified?h('span',{class:'badge t-lost'},'Not flagged'):h('span',{class:'badge t-ok'},'Flagged unverified')):'')));
+      });
+    });
+    wrap.appendChild(h('h3',{class:'acc-h'},'Wrong records ('+(a.wrong.length+a.moreWrong)+')'));
+    wrap.appendChild(h('div',{class:'tablewrap'},h('table',null,h('thead',null,h('tr',null,['record','field','answer key says','recovered','flagged?'].map(function(c){return h('th',null,c);}))),tb)));
+    if(a.moreWrong)wrap.appendChild(h('p',{class:'cap'},'Showing the first '+a.wrong.length+'; '+a.moreWrong+' more are not listed.'));
+  }
+  if(a.missing.length)wrap.appendChild(h('p',{class:'cap'},'Records in the key that were not recovered: '+a.missing.map(function(k){return k.join(', ');}).join(' | ')));
+  if(a.unexpected.length)wrap.appendChild(h('p',{class:'cap'},'Extra records the key does not contain: '+a.unexpected.map(function(k){return k.join(', ');}).join(' | ')));
+  wrap.appendChild(howMeasured());
+  return wrap;
+}
+function accuracyCard(){
+  var acc=S.run.accuracy,card=h('section',{class:'card'},h('h3',null,'Measured accuracy'));
+  if(!acc){card.appendChild(h('p',{class:'desc'},'Measuring...'));return card;}
+  var groups=acc.summary.groups,keys=['organizer','organizer-damaged','undamaged'].filter(function(k){return groups[k];});
+  card.appendChild(h('p',{class:'desc'},'Only files with an answer key are scored, and different answer keys are never averaged together. Open a file’s Accuracy tab for the detail.'));
+  if(!keys.length){card.appendChild(h('div',{class:'empty'},'None of these files has an answer key, so no accuracy is claimed.'));}
+  else{
+    card.appendChild(h('div',{class:'tablewrap'},h('table',null,
+      h('thead',null,h('tr',null,['measured against','files','in key','recovered','correct','wrong','missing','recovery','accuracy'].map(function(c){return h('th',null,c);}))),
+      h('tbody',null,keys.map(function(k){var g=groups[k];
+        return h('tr',null,h('td',null,BASIS_SHORT[k]),
+          h('td',null,g.files),h('td',null,g.expected),h('td',null,g.recovered),h('td',null,g.correct),h('td',null,g.wrong),h('td',null,g.missing),h('td',null,pct(g.recovery)),h('td',null,pct(g.accuracy)));
+      })))));
+  }
+  if(acc.summary.withoutAnswerKey)card.appendChild(h('p',{class:'cap'},plural(acc.summary.withoutAnswerKey,'file')+' without an answer key '+(acc.summary.withoutAnswerKey===1?'is':'are')+' not scored.'));
+  card.appendChild(howMeasured());
+  return card;
+}
+function loadAccuracy(){
+  var id=S.session,run=S.run;
+  api('/api/sessions/'+id+'/accuracy').then(function(a){if(S.run===run){run.accuracy=a;render();}}).catch(function(){});
 }
 
 /* ---------- render ---------- */

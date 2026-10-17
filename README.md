@@ -64,6 +64,13 @@ session folder, `deadbits.cli.run` writes the very same per-file JSON and `repor
 downloads those files (a test asserts they are byte-identical to a CLI run). The batch report also shows the equivalent
 `./salvage <in> <out>` command for that session.
 
+Each file also has an **Accuracy** tab (and the batch report an accuracy card) that reports *measured* recovery, accuracy
+and precision, but only where a correct answer exists: the organizer's published answer key for kit files (matched by file
+content, never by name), or the undamaged copy for files the page damaged on purpose. It uses the same counting code as
+`salvage --verify`, shows which truth it used, never blends different answer keys, and says "no answer key" for any other
+file instead of inventing a percentage. It also calls out records that are wrong but were not flagged unverified, which
+no check can catch in formats without checksums (for example a flipped CVT character).
+
 It uses only the standard library, loads nothing from the network, and binds to `127.0.0.1` only (requests with another
 Host or Origin are refused). Session copies live under the system temp folder (not the project folder, which may be
 synced to a cloud drive) and are removed on **Start over**, on exit, or after a day. The default `./salvage <in> <out>`

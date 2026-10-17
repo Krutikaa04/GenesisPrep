@@ -27,7 +27,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlsplit
 
-from . import cli
+from . import cli, webui_accuracy
 from .engine import MAX_INPUT_BYTES
 from .version import VERSION
 from .webui_assets import APP_CSS, APP_JS, INDEX_HTML
@@ -107,6 +107,7 @@ class Session:
         self.out.mkdir()
         self.lock = threading.Lock()
         self.notes = {}   # staged name -> human note (e.g. which damage was applied)
+        self.origins = {}  # staged name -> {"sample": kit file, "mutate": damage option} for UI-staged samples
 
     def staged(self):
         rows = []
@@ -147,6 +148,7 @@ class App:
         self.workdir = Path(workdir)
         self.sessions = {}
         self.lock = threading.Lock()
+        self.truth = webui_accuracy.Truth(self.samples_dir)
         self.workdir.mkdir(parents=True, exist_ok=True)
         self.clean_stale()
 
@@ -381,6 +383,7 @@ def make_handler(app: App, port_holder: list):
                             return self._error(404, "That file is not in the list")
                         (session.inp / match[0]["name"]).unlink()
                         session.notes.pop(match[0]["name"], None)
+                        session.origins.pop(match[0]["name"], None)
                     return self._json({"removed": segments[4]})
                 self._error(404, "Not found")
             except Exception as exc:
@@ -390,6 +393,10 @@ def make_handler(app: App, port_holder: list):
         def _session_get(self, session, rest, query):
             if rest == ["files"]:
                 return self._json({"files": session.staged()})
+            if rest == ["accuracy"]:
+                with session.lock:
+                    return self._json(webui_accuracy.report(session.staged(), session.out, session.inp,
+                                                            session.origins, app.truth))
             if rest == ["results.zip"]:
                 return self._send(200, build_zip(session), "application/zip",
                                   {"Content-Disposition": 'attachment; filename="salvage-results.zip"'})
@@ -450,14 +457,14 @@ def make_handler(app: App, port_holder: list):
                     data = app.sample_bytes(sample)
                     if data is None:
                         return self._error(404, "Unknown sample")
-                    added.append(self._stage(session, sample, data, kind, False))
+                    added.append(self._stage(session, sample, data, kind, False, sample))
                 return self._json({"added": added}, 201)
             if rest == ["run"]:
                 with session.lock:
                     return self._json(run_session(session))
             self._error(404, "Not found")
 
-        def _stage(self, session, name, data, kind, renamed):
+        def _stage(self, session, name, data, kind, renamed, origin=None):
             note = ""
             if kind:
                 stem, dot, ext = name.rpartition(".")
@@ -467,6 +474,8 @@ def make_handler(app: App, port_holder: list):
                 note = "Damaged on purpose for this demo: %s." % MUTATIONS[kind][1]
             with session.lock:
                 final = session.add(name, data, note)
+                if origin:
+                    session.origins[final] = {"sample": origin, "mutate": kind}
             return {"name": final, "size": len(data), "note": note, "renamed": bool(renamed or final != name)}
 
     return Handler
