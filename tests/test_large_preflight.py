@@ -13,8 +13,9 @@ class LargePreflight(unittest.TestCase):
                 self.assertEqual(_large.resource_issue(b"x", "CVT", "coarse"), "coarse")
         self.assertEqual(_large.resource_issue(b"x", "UNKNOWN", "coarse"), "coarse")
         with patch.object(_large.importlib, "import_module") as module:
-            module.return_value.resource_issue.return_value = False
-            self.assertEqual(_large.resource_issue(b"x", "CVT", "coarse"), "coarse")
+            for invalid in (False, "", 1, object()):
+                module.return_value.resource_issue.return_value = invalid
+                self.assertEqual(_large.resource_issue(b"x", "CVT", "coarse"), "coarse")
             module.return_value.resource_issue.side_effect = ValueError()
             self.assertIn("safe bound", _large.resource_issue(b"x", "CVT", "coarse"))
 
