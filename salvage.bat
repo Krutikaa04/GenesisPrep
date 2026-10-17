@@ -1,4 +1,9 @@
 @echo off
-set PYTHONPATH=%~dp0;%PYTHONPATH%
-python -m deadbits.cli %*
-exit /b 0
+setlocal DisableDelayedExpansion
+set "PYTHONPATH=%~dp0;%PYTHONPATH%"
+if exist "%~dp0.venv\Scripts\python.exe" (
+  "%~dp0.venv\Scripts\python.exe" -m deadbits.cli %*
+) else (
+  python -m deadbits.cli %*
+)
+exit /b %ERRORLEVEL%

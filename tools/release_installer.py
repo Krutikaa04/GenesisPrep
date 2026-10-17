@@ -98,7 +98,11 @@ def _layout(prefix):
     return launcher, "share/salvage/salvage.pyz", "share/salvage/install-manifest.json"
 
 
-def _existing(prefix, files, manifest_name):
+def _menu_name():
+    return 'Start Salvage.cmd' if os.name == 'nt' else 'Start Salvage.command' if sys.platform == 'darwin' else 'Start Salvage.sh'
+
+
+def _existing(prefix, files, manifest_name, check_new=True):
     manifest_path = prefix / manifest_name
     _safe_file(manifest_path)
     if not manifest_path.exists():
@@ -112,19 +116,25 @@ def _existing(prefix, files, manifest_name):
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     if (not isinstance(manifest, dict) or manifest.get("installer") != MARKER
             or not isinstance(manifest.get("files"), dict)
-            or set(manifest["files"]) != set(files)):
+            or set(manifest["files"]) not in (set(files), set(files[:2]))):
         raise ValueError("unrecognized installation manifest")
-    for name in files:
+    for name in manifest['files']:
         path = prefix / name
         _safe_file(path)
         if not path.exists() or digest(path.read_bytes()) != manifest["files"][name]:
             raise ValueError("installed file changed or missing; refusing modification: %s" % path)
+    if check_new:
+        for name in set(files) - set(manifest['files']):
+            _safe_file(prefix / name)
+            if (prefix / name).exists():
+                raise ValueError('refusing to overwrite unmanaged file: %s' % (prefix / name))
     return manifest
 
 
 def _bundle(bundle):
     """Checksums detect accidental corruption; release SHA256SUMS covers the bundle."""
-    names = ("install.py", "salvage.pyz", "INSTALL.md")
+    names = ("install.py", "salvage.pyz", "INSTALL.md", 'Install on Windows.cmd',
+             'Uninstall on Windows.cmd', 'Install on macOS.command', 'Uninstall on macOS.command')
     sums_path = bundle / "SHA256SUMS"
     _safe_file(sums_path)
     expected = {}
@@ -213,27 +223,31 @@ def _remove_empty(directories):
 def install(prefix, bundle):
     prefix = normalized_prefix(prefix)
     launcher_name, payload_name, manifest_name = _layout(prefix)
-    names = (launcher_name, payload_name)
+    menu_name = _menu_name()
+    names = (launcher_name, payload_name, menu_name)
     for name in names + (manifest_name,):
         normalized_prefix((prefix / name).parent)
     _existing(prefix, names, manifest_name)
     payload, version = _bundle(bundle)
     if _self_check(bundle / "salvage.pyz") != version:
         raise ValueError("application version self-check failed")
-    contents = {launcher_name: _launcher(prefix / payload_name), payload_name: payload}
+    contents = {launcher_name: _launcher(prefix / payload_name), payload_name: payload,
+                menu_name: _launcher(prefix / payload_name)}
     manifest = {"installer": MARKER, "version": version,
                 "python": str(Path(sys.executable).resolve()),
                 "files": {name: digest(data) for name, data in contents.items()}}
     contents[manifest_name] = (json.dumps(manifest, sort_keys=True, indent=2) + "\n").encode("utf-8")
     created = _make_dirs(prefix, contents)
     try:
-        _transaction([(prefix / name, data, 0o755 if name == launcher_name else 0o644)
+        _transaction([(prefix / name, data, 0o755 if name in (launcher_name, menu_name) else 0o644)
                       for name, data in contents.items()])
     except Exception:
         _remove_empty(created)
         raise
     launcher = prefix / launcher_name
     print("Installed Salvage %s: %s" % (version, launcher))
+    print('Start here: %s' % (prefix / menu_name))
+    print('Open that launcher to use the welcome menu. No PATH setup is required.')
     if os.name == "nt":
         print('Run directly: "%s" --help' % launcher)
         print('For this CMD session: set "PATH=%s;%%PATH%%"' % (prefix / "bin"))
@@ -246,13 +260,14 @@ def install(prefix, bundle):
 def uninstall(prefix):
     prefix = normalized_prefix(prefix)
     launcher_name, payload_name, manifest_name = _layout(prefix)
-    names = (launcher_name, payload_name)
+    names = (launcher_name, payload_name, _menu_name())
     for name in names + (manifest_name,):
         normalized_prefix((prefix / name).parent)
-    if _existing(prefix, names, manifest_name) is None:
+    manifest = _existing(prefix, names, manifest_name, check_new=False)
+    if manifest is None:
         print("Salvage is not installed at %s" % prefix)
         return
-    _transaction([(prefix / name, None, 0) for name in names + (manifest_name,)])
+    _transaction([(prefix / name, None, 0) for name in tuple(manifest['files']) + (manifest_name,)])
     # Remove only our known directories, and only when empty.
     _remove_empty([prefix, prefix / "bin", prefix / "share", prefix / "share/salvage"])
     print("Removed Salvage from %s; unrelated files were preserved." % prefix)
@@ -268,12 +283,21 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description="Install Salvage offline for the current user (Python 3.10+ required).")
     parser.add_argument("--prefix", type=Path, default=default_prefix(), help="installation prefix (default: %(default)s)")
     parser.add_argument("--uninstall", action="store_true", help="remove unchanged files managed by this installer")
+    parser.add_argument('--no-start', action='store_true', help='do not offer to open the welcome menu after setup')
     args = parser.parse_args(argv)
     try:
         if args.uninstall:
             uninstall(args.prefix)
         else:
             install(args.prefix, Path(__file__).resolve().parent)
+            if not args.no_start and sys.stdin.isatty() and sys.stdout.isatty():
+                try:
+                    start = input('Open the Salvage welcome menu now? [y/N] ').strip().lower()
+                except (EOFError, KeyboardInterrupt):
+                    start = 'n'
+                if start == 'y':
+                    return subprocess.call([sys.executable, '-I',
+                        str(normalized_prefix(args.prefix)/'share/salvage/salvage.pyz'), '--interactive'])
     except Exception as exc:
         print("Salvage installer: %s" % exc, file=sys.stderr)
         return 1

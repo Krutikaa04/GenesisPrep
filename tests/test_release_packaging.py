@@ -59,7 +59,8 @@ class ReleasePackagingTests(unittest.TestCase):
                       if name.startswith("deadbits/formats/") and not Path(name).stem.startswith("_")}
             self.assertEqual(actual, expected)
         with zipfile.ZipFile(io.BytesIO(result["salvage-0.1.0-installer.zip"])) as archive:
-            self.assertEqual(set(archive.namelist()), {"salvage.pyz", "install.py", "INSTALL.md", "SHA256SUMS"})
+            self.assertEqual(set(archive.namelist()), {"salvage.pyz", "install.py", "INSTALL.md", "SHA256SUMS",
+                             *build.setup_launchers()})
             self.assertEqual(archive.read("salvage.pyz"), result["salvage-0.1.0.pyz"])
 
     def test_wrapper_checks_python_before_importing_application(self):

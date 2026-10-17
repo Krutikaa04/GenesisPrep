@@ -106,6 +106,7 @@ def _parser():
     parser.add_argument("input_dir", nargs="?", type=Path)
     parser.add_argument("output_dir", nargs="?", type=Path)
     modes = parser.add_mutually_exclusive_group()
+    modes.add_argument('--interactive', action='store_true', help='open the beginner welcome menu')
     modes.add_argument("--version", action="store_true", help="show the application version")
     modes.add_argument("--demo", action="store_true",
                        help="run the mentor walkthrough; use --demo --help for options")
@@ -127,6 +128,9 @@ def _parser():
 
 def main(argv=None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
+    if argv == ['--interactive'] or (not argv and sys.stdin.isatty() and sys.stdout.isatty()):
+        from .welcome import run_menu
+        return run_menu()
     # Delegate the complete demo grammar rather than duplicating its options.
     # Tokens after -- are literal recovery paths, including a folder named --demo.
     option_end = argv.index("--") if "--" in argv else len(argv)
@@ -143,10 +147,12 @@ def main(argv=None) -> int:
             return 1
     parser = _parser()
     # Recovery retains its historical zero exit even on usage/operational failure.
-    validation_requested = any(arg.split("=", 1)[0] in {"--doctor", "--verify", "--test", "--benchmark", "--demo"}
+    validation_requested = any(arg.split("=", 1)[0] in {"--doctor", "--verify", "--test", "--benchmark", "--demo", '--interactive'}
                                for arg in argv[:argv.index("--") if "--" in argv else len(argv)])
     try:
         args = parser.parse_args(argv)
+        if args.interactive:
+            parser.error('--interactive accepts no other options; choose a task from its menu')
         mode = next((name for name in ("doctor", "verify", "test", "benchmark")
                      if getattr(args, name)), None)
         has_paths = any(getattr(args, name) is not None for name in

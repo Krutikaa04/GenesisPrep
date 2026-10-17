@@ -1,5 +1,58 @@
 # Salvage installation and removal
 
+## Start here (no terminal commands needed after Python setup)
+
+1. Python 3.10 or newer must already be installed; Python 3.12 is the primary
+   tested version. On Windows, include the Python launcher (`py`) during Python
+   setup. On macOS, install a suitable Python separately from the system Python.
+2. Extract the complete `salvage-<version>-installer.zip` into a new folder.
+3. Open **Install on Windows.cmd** or **Install on macOS.command**. The helper
+   checks for an existing suitable Python and explains what to do if it is
+   missing. It never downloads Python, changes system Python or needs admin rights.
+   macOS ZIP tools may discard executable permissions; in that case use the
+   terminal installation command below. OS trust/quarantine policies still apply.
+4. After installation, choose **Y** to open the welcome menu immediately.
+   For later use, open **Start Salvage.cmd** (Windows) or
+   **Start Salvage.command** (macOS) at the installed location printed by setup.
+   Linux users can run the printed `Start Salvage.sh` or `bin/salvage` command.
+5. Choose **1 — Recover files**. Enter **B** to browse for the input folder,
+   or paste its full path. The results step suggests a fresh folder under your
+   home directory's **Salvage Results**. Browse there selects a parent for a
+   new results folder; existing folders are never overwritten by this menu.
+6. Confirm recovery. Read the visual summary, then choose **Y** to open the
+   results folder. Look at `report.json` and the individual recovered JSON files.
+
+The welcome menu also offers the guided demo, expected-answer comparison,
+system checks and exit. `salvage` with no arguments opens it in an interactive
+terminal; `salvage --interactive` selects it explicitly. EOF/cancel is safe.
+If optional native folder dialogs are unavailable, paste/type paths instead.
+Neither folder selection nor result opening requires a third-party package.
+
+No answers are required for recovery. Accuracy is measured only when independent
+expected answers are supplied. Missing optional test/demo resources do not stop
+ordinary recovery. No menu choice silently downloads or fabricates a kit.
+
+## Optional offline demo and validation kit
+
+The matching **source ZIP** is the optional validation kit. The release manifest
+names that artifact and its `samples/official` and source paths explicitly.
+Extract it separately, then select its top-level folder in **Run a guided
+demonstration**. The menu finds its samples and answers automatically and asks
+before executing its local Python tests and benchmark tools. Trust only your
+own kit or the matching project download. A data-only kit can demonstrate
+recovery/references; unavailable tests or scoring remain explicitly unavailable.
+
+For expected-answer comparisons, select input and answer folders separately.
+Answers use the JSON schema documented in REFERENCE-RUNNER.md in the source kit.
+Selecting inputs without answers never establishes accuracy.
+
+To remove the application, open the matching **Uninstall on Windows.cmd** or
+**Uninstall on macOS.command** from the installer folder. Keep that folder and
+the Python interpreter used for installation. The helpers use the default prefix;
+custom installations use the explicit commands below. Uninstall preserves user
+recovery/evidence folders and unrelated files. There are no automatic updates,
+PATH/profile/registry edits, bundled interpreter or native MSI/PKG in this build.
+
 These release packages use Python's standard library only. Python 3.10 or newer
 must already be installed; Python 3.12 is the primary tested version. There is
 no bundled Python interpreter, GUI, network installer, or background service.
@@ -29,8 +82,8 @@ Replace the version placeholder with the actual downloaded filename.
 
 ## Install the command
 
-Download and extract `salvage-<version>-installer.zip` to a new folder. Keep
-install.py, salvage.pyz, INSTALL.md and SHA256SUMS together. Run the installer
+Download and extract `salvage-<version>-installer.zip` to a new folder. Keep all
+extracted files, including the setup helpers and SHA256SUMS, together. Run the installer
 using the Python interpreter you intend to keep installed:
 
 macOS / Linux:

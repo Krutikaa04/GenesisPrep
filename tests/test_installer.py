@@ -48,7 +48,7 @@ class InstallerTests(unittest.TestCase):
             self.assertNotEqual(completed.returncode, 0, completed.stdout)
         return completed
 
-    def run_launcher(self, *args):
+    def run_launcher(self, *args, input_data=None):
         command = [str(self.launcher), *args]
         if os.name == "nt":
             # /s strips the explicit outer pair, retaining each quoted path.
@@ -57,7 +57,49 @@ class InstallerTests(unittest.TestCase):
             interpreter = os.environ.get("COMSPEC", "cmd.exe")
             inner = " ".join('"' + str(value) + '"' for value in command)
             command = '"' + interpreter + '" /d /s /c "' + inner + '"'
-        return subprocess.run(command, cwd=self.cwd, env=self.env, capture_output=True, text=True, timeout=40)
+        return subprocess.run(command, cwd=self.cwd, env=self.env, input=input_data,
+                              capture_output=True, text=True, timeout=40)
+
+    def test_installed_command_opens_beginner_menu_and_manages_clickable_entry(self):
+        self.run_install()
+        manifest = json.loads((self.prefix/'share/salvage/install-manifest.json').read_text())
+        entry = self.prefix/installer._menu_name()
+        self.assertTrue(entry.is_file())
+        self.assertIn(installer._menu_name(), manifest['files'])
+        result = self.run_launcher('--interactive', input_data='5\n')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('WHAT WOULD YOU LIKE TO DO', result.stdout)
+        self.run_install('--uninstall')
+        self.assertFalse(entry.exists())
+
+    def test_legacy_install_upgrade_adds_menu_without_overwriting_unmanaged_files(self):
+        self.run_install()
+        path = self.prefix/'share/salvage/install-manifest.json'
+        data = json.loads(path.read_text())
+        menu = installer._menu_name()
+        del data['files'][menu]
+        path.write_text(json.dumps(data))
+        (self.prefix/menu).unlink()
+        self.run_install()
+        self.assertTrue((self.prefix/menu).is_file())
+        self.run_install('--uninstall')
+        self.run_install()
+        data = json.loads(path.read_text())
+        del data['files'][menu]
+        path.write_text(json.dumps(data))
+        (self.prefix/menu).write_text('unmanaged peer')
+        self.run_install(success=False)
+        self.run_install('--uninstall')
+        self.assertEqual((self.prefix/menu).read_text(), 'unmanaged peer')
+
+    @unittest.skipUnless(os.name == 'nt', 'actual Windows batch launcher')
+    def test_windows_source_launcher_preserves_validation_failure_exit(self):
+        from test_release_checks import windows_batch_command
+        command = windows_batch_command([ROOT/'salvage.bat', '--verify', '--samples-dir', self.root/'missing',
+            '--expected-dir', self.root/'missing-answers', '--evidence-dir', self.root/'proof'])
+        result = subprocess.run(command, cwd=self.cwd, env=self.env,
+                                capture_output=True, text=True, timeout=40)
+        self.assertEqual(result.returncode, 3, result.stdout + result.stderr)
 
     def test_real_install_recovery_reinstall_uninstall_with_unrelated_files(self):
         installed = self.run_install()

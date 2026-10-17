@@ -21,6 +21,58 @@ sys.exit(main())
 '''
 
 
+def setup_launchers():
+    """Clickable helpers use an existing interpreter; never download one."""
+    result = {}
+    for action, flag in (('Install', ''), ('Uninstall', '--uninstall')):
+        windows = r'''@echo off
+setlocal DisableDelayedExpansion
+py -0p 2>nul | findstr /i /c:"python.exe" >nul
+if errorlevel 1 goto missing
+py -3 -I -c "import sys; sys.exit(0 if sys.version_info >= (3,10) else 1)" >nul 2>nul
+if errorlevel 1 goto missing
+py -3 -I "%~dp0install.py" FLAG
+set "SALVAGE_SETUP_STATUS=%ERRORLEVEL%"
+goto finish
+:missing
+echo Python 3.10 or newer is required. Python 3.12 is recommended.
+echo Install Python and its launcher from python.org, then open this file again.
+echo If Python is already installed without py, run: python install.py FLAG
+echo No software was downloaded or installed by this helper.
+set "SALVAGE_SETUP_STATUS=1"
+:finish
+if not defined SALVAGE_NO_PAUSE pause
+exit /b %SALVAGE_SETUP_STATUS%
+'''.replace('FLAG', flag).replace('\n', '\r\n').encode('utf-8')
+        mac = '''#!/bin/sh
+SALVAGE_SETUP_ROOT="$(cd "$(dirname "$0")" && pwd)"
+SALVAGE_SETUP_PY=""
+for candidate in python3.12 python3 python; do
+  if command -v "$candidate" >/dev/null 2>&1 && "$candidate" -I -c 'import sys; sys.exit(0 if sys.version_info >= (3,10) else 1)' >/dev/null 2>&1; then
+    SALVAGE_SETUP_PY="$candidate"
+    break
+  fi
+done
+if [ -n "$SALVAGE_SETUP_PY" ]; then
+  "$SALVAGE_SETUP_PY" -I "$SALVAGE_SETUP_ROOT/install.py" FLAG
+  SALVAGE_SETUP_STATUS=$?
+else
+  echo 'Python 3.10 or newer is required. Python 3.12 is recommended.'
+  echo 'Install Python from python.org, then open this file again.'
+  echo 'No software was downloaded or installed by this helper.'
+  SALVAGE_SETUP_STATUS=1
+fi
+if [ -t 0 ] && [ -z "$SALVAGE_NO_PAUSE" ]; then
+  printf 'Press Enter to close. '
+  read -r SALVAGE_SETUP_WAIT
+fi
+exit "$SALVAGE_SETUP_STATUS"
+'''.replace('FLAG', flag).encode('utf-8')
+        result[action + ' on Windows.cmd'] = (windows, 0o644)
+        result[action + ' on macOS.command'] = (mac, 0o755)
+    return result
+
+
 def sha256(data):
     return hashlib.sha256(data).hexdigest()
 
@@ -111,7 +163,10 @@ def artifacts(commit, files, requested_version=None):
     pyz = zip_bytes(application)
     bundle = {"salvage.pyz": pyz, "install.py": files["tools/release_installer.py"][0],
               "INSTALL.md": files["docs/INSTALL.md"][0]}
+    helpers = setup_launchers()
+    bundle.update({name: entry[0] for name, entry in helpers.items()})
     installer = {name: (data, 0o644) for name, data in bundle.items()}
+    installer.update(helpers)
     installer["SHA256SUMS"] = (checksums(bundle), 0o644)
     prefix = "salvage-%s" % version
     result = {prefix + ".pyz": pyz,
@@ -119,6 +174,8 @@ def artifacts(commit, files, requested_version=None):
               prefix + "-source.zip": zip_bytes({prefix + "/" + name: entry for name, entry in files.items()})}
     manifest = {"version": version, "commit": commit, "minimum_python": MINIMUM_PYTHON,
                 "installer_requires_python": True,
+                "validation_kit": {"artifact": prefix + "-source.zip", "root": prefix,
+                                   "kit_dir": "samples/official", "source_dir": "."},
                 "artifacts": {name: {"sha256": sha256(data), "bytes": len(data)}
                               for name, data in sorted(result.items())}}
     result["release-manifest.json"] = (json.dumps(manifest, indent=2, sort_keys=True) + "\n").encode("utf-8")
